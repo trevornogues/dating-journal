@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "dating-app",
-    "slug": "dating-app",
+    "name": "dating-journal",
+    "slug": "dating-journal",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

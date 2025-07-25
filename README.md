@@ -1,4 +1,4 @@
-# Dating Management App
+# Dating Journal
 
 A React Native iOS app for managing your dating life, built with Expo.
 
@@ -40,7 +40,7 @@ A React Native iOS app for managing your dating life, built with Expo.
 
 1. Navigate to the project directory:
 ```bash
-cd dating-app
+cd dating-journal
 ```
 
 2. Install dependencies (already done):
@@ -84,7 +84,7 @@ expo start
 ## Project Structure
 
 ```
-dating-app/
+dating-journal/
 ├── App.js                    # Main app entry point
 ├── src/
 │   ├── screens/             # All app screens
