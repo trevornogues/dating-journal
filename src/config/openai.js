@@ -4,7 +4,7 @@
 
 export const OPENAI_CONFIG = {
   // Replace with your OpenAI API key
-  apiKey: 'YOUR_OPENAI_API_KEY_HERE',
+  apiKey: 'YOUR_OPENAI_API_KEY_HERE', // ← Add your actual API key here (e.g., 'sk-...')
   model: 'gpt-4o',
   apiUrl: 'https://api.openai.com/v1/chat/completions',
 };
