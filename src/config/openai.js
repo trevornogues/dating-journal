@@ -1,11 +1,9 @@
-// OpenAI Configuration
-// WARNING: In a production app, never hardcode API keys!
-// This is only for development/testing purposes.
+import { OPENAI_API_KEY } from '@env';
+
 
 export const OPENAI_CONFIG = {
-  // Replace with your OpenAI API key
-  apiKey: 'YOUR_OPENAI_API_KEY_HERE', // ← Add your actual API key here (e.g., 'sk-...')
-  model: 'gpt-4o',
+  apiKey: OPENAI_API_KEY,
+  model: 'gpt-5-mini',
   apiUrl: 'https://api.openai.com/v1/chat/completions',
 };
 

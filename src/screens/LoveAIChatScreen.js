@@ -39,6 +39,12 @@ export default function LoveAIChatScreen({ navigation }) {
     }
   }, []);
 
+  useEffect(() => {
+    if (flatListRef.current) {
+      flatListRef.current.scrollToEnd({ animated: true });
+    }
+  }, [messages]);
+
   const sendMessage = async () => {
     if (!inputText.trim() || isLoading) return;
 
@@ -143,7 +149,6 @@ export default function LoveAIChatScreen({ navigation }) {
         renderItem={renderMessage}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.messagesList}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
       />
 
       {isLoading && (
