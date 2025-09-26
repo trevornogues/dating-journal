@@ -170,4 +170,80 @@ export class OpenAIService {
       }
     }
   }
+
+  static async sendMessageStream(userMessage, conversationHistory = [], userId, onChunk) {
+    if (!OPENAI_CONFIG.apiKey || OPENAI_CONFIG.apiKey === 'YOUR_OPENAI_API_KEY_HERE') {
+      throw new Error('Please configure your OpenAI API key in src/config/openai.js');
+    }
+
+    try {
+      // Generate current dating context
+      const datingContext = await this.generateDatingContext(userId);
+
+      // Build messages array
+      const messages = [
+        {
+          role: 'system',
+          content: SYSTEM_PROMPT,
+        },
+        {
+          role: 'system',
+          content: `Here is the user's current dating context:\n\n${datingContext}`,
+        },
+        ...conversationHistory,
+        {
+          role: 'user',
+          content: userMessage,
+        },
+      ];
+
+      // For React Native, we'll simulate streaming by making a regular request
+      // and then streaming the response character by character
+      const response = await fetch(OPENAI_CONFIG.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENAI_CONFIG.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: OPENAI_CONFIG.model,
+          messages: messages,
+          temperature: 0.7,
+          max_tokens: 500,
+          stream: false, // Use regular request for React Native compatibility
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('OpenAI API Error:', errorData);
+        throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const fullResponse = data.choices?.[0]?.message?.content || '';
+      
+      // Simulate streaming by sending chunks of the response
+      const words = fullResponse.split(' ');
+      let currentText = '';
+      
+      for (let i = 0; i < words.length; i++) {
+        currentText += (i > 0 ? ' ' : '') + words[i];
+        onChunk(i > 0 ? ' ' + words[i] : words[i]);
+        
+        // Add a small delay to simulate streaming
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    } catch (error) {
+      console.error('OpenAI Streaming Error:', error);
+      
+      if (error.message.includes('401')) {
+        throw new Error('Invalid API key. Please check your OpenAI API key.');
+      } else if (error.message.includes('429')) {
+        throw new Error('Rate limit exceeded. Please try again later.');
+      } else {
+        throw new Error('Failed to get response from AI. Please try again.');
+      }
+    }
+  }
 } 

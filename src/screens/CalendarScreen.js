@@ -308,7 +308,7 @@ export default function CalendarScreen() {
       </View>
       
       <TouchableOpacity
-        style={[styles.modalButton, styles.cancelButton]}
+        style={[styles.cancelButton, styles.singleButton]}
         onPress={() => setModalVisible(false)}
       >
         <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -931,6 +931,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F9FA',
     borderWidth: 1,
     borderColor: '#E9ECEF',
+  },
+  singleButton: {
+    paddingVertical: 18,
+    borderRadius: 15,
+    alignItems: 'center',
+    marginTop: 20,
+    width: '100%',
   },
   cancelButtonText: {
     color: '#6C757D',

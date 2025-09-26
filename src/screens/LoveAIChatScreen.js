@@ -126,6 +126,8 @@ export default function LoveAIChatScreen({ navigation }) {
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingMessageId, setStreamingMessageId] = useState(null);
   const flatListRef = useRef(null);
 
   useEffect(() => {
@@ -146,7 +148,7 @@ export default function LoveAIChatScreen({ navigation }) {
   }, [messages]);
 
   const sendMessage = async () => {
-    if (!inputText.trim() || isLoading) return;
+    if (!inputText.trim() || isLoading || isStreaming) return;
 
     const userMessage = {
       id: Date.now().toString(),
@@ -159,33 +161,70 @@ export default function LoveAIChatScreen({ navigation }) {
     setInputText('');
     setIsLoading(true);
 
+    // Create initial assistant message for streaming
+    const assistantMessageId = (Date.now() + 1).toString();
+    const assistantMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+    };
+
+    setMessages(prev => [...prev, assistantMessage]);
+    setIsStreaming(true);
+    setStreamingMessageId(assistantMessageId);
+
     try {
-      // Convert messages to OpenAI format (excluding the initial greeting)
+      // Convert messages to OpenAI format (excluding the initial greeting and the new assistant message)
       const conversationHistory = messages
-        .slice(1)
+        .slice(1, -1) // Exclude the new assistant message we just added
         .map(msg => ({
           role: msg.role,
           content: msg.content,
         }));
 
-      const response = await OpenAIService.sendMessage(
-        userMessage.content,
-        conversationHistory,
-        user?.id
-      );
-
-      const assistantMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: response,
-        timestamp: new Date(),
-      };
-
-      setMessages(prev => [...prev, assistantMessage]);
+      try {
+        await OpenAIService.sendMessageStream(
+          userMessage.content,
+          conversationHistory,
+          user?.id,
+          (chunk) => {
+            // Update the streaming message with new content
+            setMessages(prev => 
+              prev.map(msg => 
+                msg.id === assistantMessageId 
+                  ? { ...msg, content: msg.content + chunk }
+                  : msg
+              )
+            );
+          }
+        );
+      } catch (streamingError) {
+        console.log('Streaming failed, falling back to regular request:', streamingError);
+        // Fallback to non-streaming request
+        const response = await OpenAIService.sendMessage(
+          userMessage.content,
+          conversationHistory,
+          user?.id
+        );
+        
+        // Update the message with the full response
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === assistantMessageId 
+              ? { ...msg, content: response }
+              : msg
+          )
+        );
+      }
     } catch (error) {
       Alert.alert('Error', error.message);
+      // Remove the empty assistant message on error
+      setMessages(prev => prev.filter(msg => msg.id !== assistantMessageId));
     } finally {
       setIsLoading(false);
+      setIsStreaming(false);
+      setStreamingMessageId(null);
     }
   };
 
@@ -219,6 +258,13 @@ export default function LoveAIChatScreen({ navigation }) {
           ) : (
             <View style={styles.formattedContent}>
               {parseMarkdown(item.content)}
+              {isStreaming && item.id === streamingMessageId && (
+                <View style={styles.typingIndicator}>
+                  <View style={styles.typingDot} />
+                  <View style={[styles.typingDot, styles.typingDotDelay1]} />
+                  <View style={[styles.typingDot, styles.typingDotDelay2]} />
+                </View>
+              )}
             </View>
           )}
           <Text style={styles.timestamp}>
@@ -258,10 +304,12 @@ export default function LoveAIChatScreen({ navigation }) {
         contentContainerStyle={styles.messagesList}
       />
 
-      {isLoading && (
+      {(isLoading || isStreaming) && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="small" color="#FF6B6B" />
-          <Text style={styles.loadingText}>LoveAI is thinking...</Text>
+          <Text style={styles.loadingText}>
+            {isStreaming ? 'LoveAI is typing...' : 'LoveAI is thinking...'}
+          </Text>
         </View>
       )}
 
@@ -275,17 +323,17 @@ export default function LoveAIChatScreen({ navigation }) {
           multiline
           maxHeight={100}
           onSubmitEditing={sendMessage}
-          editable={!isLoading}
+          editable={!isLoading && !isStreaming}
         />
         <TouchableOpacity
-          style={[styles.sendButton, (!inputText.trim() || isLoading) && styles.sendButtonDisabled]}
+          style={[styles.sendButton, (!inputText.trim() || isLoading || isStreaming) && styles.sendButtonDisabled]}
           onPress={sendMessage}
-          disabled={!inputText.trim() || isLoading}
+          disabled={!inputText.trim() || isLoading || isStreaming}
         >
           <Ionicons
             name="send"
             size={24}
-            color={inputText.trim() && !isLoading ? 'white' : '#ccc'}
+            color={inputText.trim() && !isLoading && !isStreaming ? 'white' : '#ccc'}
           />
         </TouchableOpacity>
       </View>
@@ -475,5 +523,25 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: '#f0f0f0',
+  },
+  typingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    marginLeft: 4,
+  },
+  typingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FF6B6B',
+    marginRight: 4,
+    opacity: 0.4,
+  },
+  typingDotDelay1: {
+    opacity: 0.6,
+  },
+  typingDotDelay2: {
+    opacity: 0.8,
   },
 }); 

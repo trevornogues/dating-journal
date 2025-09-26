@@ -391,12 +391,12 @@ export default function ProspectDetailScreen({ route, navigation }) {
               style={styles.graveyardButton}
               onPress={handleMoveToGraveyard}
             >
-              <Text style={styles.graveyardButtonText}>Move to Graveyard</Text>
+              <Text style={styles.graveyardButtonText}>🪦 Move to Graveyard</Text>
             </TouchableOpacity>
           )}
 
           <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-            <Text style={styles.deleteButtonText}>Delete Prospect</Text>
+            <Text style={styles.deleteButtonText}>🗑️ Delete Prospect</Text>
           </TouchableOpacity>
         </>
       )}
@@ -467,7 +467,9 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 10,
     marginBottom: 10,
+    marginHorizontal: 40,
     alignItems: 'center',
+    alignSelf: 'center',
   },
   editButtonText: {
     color: 'white',

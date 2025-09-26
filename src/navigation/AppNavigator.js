@@ -59,9 +59,9 @@ const ProspectsStack = () => (
     }}
   >
     <Stack.Screen name="ProspectsList" component={ProspectsScreen} options={{ title: 'Prospects' }} />
-    <Stack.Screen name="AddProspect" component={AddProspectScreen} options={{ title: 'Add Prospect' }} />
-    <Stack.Screen name="ProspectDetail" component={ProspectDetailScreen} options={{ title: 'Prospect Details' }} />
-    <Stack.Screen name="ProspectNotes" component={ProspectNotesScreen} options={{ title: 'Timeline Notes' }} />
+    <Stack.Screen name="AddProspect" component={AddProspectScreen} options={{ title: 'Add Prospect', headerBackTitle: 'Back' }} />
+    <Stack.Screen name="ProspectDetail" component={ProspectDetailScreen} options={{ title: 'Prospect Details', headerBackTitle: 'Back' }} />
+    <Stack.Screen name="ProspectNotes" component={ProspectNotesScreen} options={{ title: 'Timeline Notes', headerBackTitle: 'Back' }} />
   </Stack.Navigator>
 );
 
@@ -132,22 +132,34 @@ const MainStack = () => (
     <Stack.Screen 
       name="AddProspect" 
       component={AddProspectScreen} 
-      options={{ title: 'Add Prospect' }}
+      options={{ 
+        title: 'Add Prospect',
+        headerBackTitle: 'Back'
+      }}
     />
     <Stack.Screen 
       name="ProspectDetail" 
       component={ProspectDetailScreen} 
-      options={{ title: 'Prospect Details' }}
+      options={{ 
+        title: 'Prospect Details',
+        headerBackTitle: 'Back'
+      }}
     />
     <Stack.Screen 
       name="ProspectNotes" 
       component={ProspectNotesScreen} 
-      options={{ title: 'Timeline Notes' }}
+      options={{ 
+        title: 'Timeline Notes',
+        headerBackTitle: 'Back'
+      }}
     />
     <Stack.Screen 
       name="UserProfile" 
       component={UserProfileScreen} 
-      options={{ title: 'Dating Goals' }}
+      options={{ 
+        title: 'Dating Goals',
+        headerBackTitle: 'Back'
+      }}
     />
   </Stack.Navigator>
 );

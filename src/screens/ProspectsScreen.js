@@ -106,7 +106,7 @@ export default function ProspectsScreen({ navigation }) {
               activeTab === 'active' && styles.activeTabText,
             ]}
           >
-            Active ({prospects.filter(p => !p.inGraveyard).length})
+            💕 Active ({prospects.filter(p => !p.inGraveyard).length})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -122,7 +122,7 @@ export default function ProspectsScreen({ navigation }) {
               activeTab === 'graveyard' && styles.activeTabText,
             ]}
           >
-            Graveyard ({prospects.filter(p => p.inGraveyard).length})
+            🪦 Graveyard ({prospects.filter(p => p.inGraveyard).length})
           </Text>
         </TouchableOpacity>
       </View>
@@ -132,7 +132,7 @@ export default function ProspectsScreen({ navigation }) {
           <Text style={styles.emptyText}>
             {activeTab === 'active'
               ? 'No active prospects yet'
-              : 'No prospects in graveyard'}
+              : '🪦 No prospects in graveyard'}
           </Text>
           {activeTab === 'active' && (
             <TouchableOpacity
