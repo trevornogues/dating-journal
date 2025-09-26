@@ -7,13 +7,13 @@ import { Platform } from 'react-native';
 
 // Firebase configurations
 const firebaseConfig = {
-  apiKey: "AIzaSyDrnbr4m7ywcoe58KDLGTFkur9jyIs0RIM",
-  authDomain: "dating-journal-2fc6f.firebaseapp.com",
-  projectId: "dating-journal-2fc6f",
-  storageBucket: "dating-journal-2fc6f.firebasestorage.app",
-  messagingSenderId: "606261689883",
-  appId: "1:606261689883:web:9ddddaed164a01f53282be",
-  measurementId: "G-QTBS3BLVL5"
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
 

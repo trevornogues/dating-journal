@@ -2,7 +2,6 @@
   "expo": {
     "name": "dating-journal",
     "slug": "dating-journal",
-    "privacy": "unlisted",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

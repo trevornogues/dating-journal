@@ -35,6 +35,27 @@ A React Native iOS app for managing your dating life, built with Expo.
 - Expo CLI
 - iOS Simulator (for Mac) or Expo Go app on your iPhone
 - OpenAI API key (for LoveAI feature)
+- Firebase project (for authentication and data storage)
+
+### Environment Variables
+
+Create a `.env` file in the root directory with the following variables:
+
+```bash
+# Firebase Configuration
+EXPO_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key_here
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
+EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID=your_measurement_id
+
+# OpenAI Configuration
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+**Important**: Never commit your `.env` file to version control. It's already included in `.gitignore`.
 
 ### Installation
 
