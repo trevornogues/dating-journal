@@ -256,7 +256,15 @@ export default function CalendarScreen() {
         // Reload prospects list
         await loadData();
       } else {
-        Alert.alert('Error', result.error || 'Failed to save prospect');
+        if (result.error === 'NAME_EXISTS') {
+          Alert.alert(
+            'Name Already Exists',
+            `You already have a prospect named "${prospectName.trim()}". Please choose a different name.`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert('Error', result.error || 'Failed to save prospect');
+        }
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to save prospect');

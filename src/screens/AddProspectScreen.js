@@ -48,7 +48,15 @@ export default function AddProspectScreen({ navigation }) {
       if (result.success) {
         navigation.goBack();
       } else {
-        Alert.alert('Error', result.error || 'Failed to save prospect');
+        if (result.error === 'NAME_EXISTS') {
+          Alert.alert(
+            'Name Already Exists',
+            `You already have a prospect named "${name.trim()}". Please choose a different name.`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert('Error', result.error || 'Failed to save prospect');
+        }
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to save prospect');

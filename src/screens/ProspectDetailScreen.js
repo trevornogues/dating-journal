@@ -46,7 +46,15 @@ export default function ProspectDetailScreen({ route, navigation }) {
         setProspect(editedProspect);
         setIsEditing(false);
       } else {
-        Alert.alert('Error', result.error || 'Failed to save changes');
+        if (result.error === 'NAME_EXISTS') {
+          Alert.alert(
+            'Name Already Exists',
+            `You already have a prospect named "${editedProspect.name}". Please choose a different name.`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert('Error', result.error || 'Failed to save changes');
+        }
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to save changes');

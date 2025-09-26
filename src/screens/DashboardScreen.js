@@ -12,6 +12,7 @@ import { useAuth } from '../utils/AuthContext';
 import { FirestoreService } from '../services/firestoreService';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import OnboardingPopup from '../components/OnboardingPopup';
 
 export default function DashboardScreen({ navigation }) {
   const { user } = useAuth();
@@ -19,14 +20,16 @@ export default function DashboardScreen({ navigation }) {
   const [upcomingDates, setUpcomingDates] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [notesCount, setNotesCount] = useState({});
+  const [showOnboardingPopup, setShowOnboardingPopup] = useState(false);
 
   const loadData = async () => {
     if (!user) return;
 
     try {
-      const [prospectsResult, datesResult] = await Promise.all([
+      const [prospectsResult, datesResult, profileResult] = await Promise.all([
         FirestoreService.getProspects(user.id),
         FirestoreService.getDates(user.id),
+        FirestoreService.getUserProfile(user.id),
       ]);
 
       // Prospects
@@ -50,6 +53,19 @@ export default function DashboardScreen({ navigation }) {
         .sort((a, b) => new Date(a.dateTime || a.date) - new Date(b.dateTime || b.date))
         .slice(0, 5);
       setUpcomingDates(upcoming);
+
+      // Check if user is new (no profile data and no prospects)
+      const hasProfileData = profileResult.success && profileResult.data && 
+        (profileResult.data.values?.length > 0 || 
+         profileResult.data.lookingFor?.length > 0 || 
+         profileResult.data.boundaries?.length > 0 || 
+         profileResult.data.dealBreakers?.length > 0);
+      
+      const isNewUser = !hasProfileData && activeProspects.length === 0;
+      
+      if (isNewUser) {
+        setShowOnboardingPopup(true);
+      }
     } catch (error) {
       console.error('Error loading data:', error);
     }
@@ -78,6 +94,15 @@ export default function DashboardScreen({ navigation }) {
     });
   };
 
+  const handleNavigateToGoals = () => {
+    setShowOnboardingPopup(false);
+    navigation.navigate('UserProfile');
+  };
+
+  const handleDismissOnboarding = () => {
+    setShowOnboardingPopup(false);
+  };
+
   return (
     <ScrollView
       style={styles.container}
@@ -87,8 +112,18 @@ export default function DashboardScreen({ navigation }) {
       }
     >
       <View style={styles.header}>
-        <Text style={styles.greeting}>Hello, {user?.name?.split(' ')[0] || 'there'}!</Text>
-        <Text style={styles.subtitle}>Here's your dating overview</Text>
+        <View style={styles.headerTop}>
+          <View style={styles.headerContent}>
+            <Text style={styles.greeting}>Hello, {user?.name?.split(' ')[0] || 'there'}!</Text>
+            <Text style={styles.subtitle}>Here's your dating overview</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Settings')}
+            style={styles.settingsButton}
+          >
+            <Ionicons name="settings" size={20} color="white" />
+          </TouchableOpacity>
+        </View>
         <TouchableOpacity
           onPress={() => navigation.navigate('UserProfile')}
           style={styles.profileButton}
@@ -220,6 +255,13 @@ export default function DashboardScreen({ navigation }) {
           <Text style={styles.statLabel}>Upcoming Dates</Text>
         </View>
       </View>
+
+      {/* Onboarding Popup */}
+      <OnboardingPopup
+        visible={showOnboardingPopup}
+        onNavigateToGoals={handleNavigateToGoals}
+        onDismiss={handleDismissOnboarding}
+      />
     </ScrollView>
   );
 }
@@ -237,6 +279,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF6B6B',
     paddingTop: 60,
   },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  headerContent: {
+    flex: 1,
+  },
   greeting: {
     fontSize: 28,
     fontWeight: 'bold',
@@ -246,6 +297,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: 'rgba(255, 255, 255, 0.9)',
     marginTop: 5,
+  },
+  settingsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
   },
   profileButton: {
     marginTop: 12,

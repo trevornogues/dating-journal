@@ -52,8 +52,45 @@ export const FirestoreService = {
   },
 
   // Prospects management
+  async checkProspectNameUnique(userId, prospectName, excludeId = null) {
+    try {
+      const prospectsRef = collection(db, 'users', userId, 'prospects');
+      const snapshot = await getDocs(prospectsRef);
+      
+      const existingProspects = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (excludeId && doc.id === excludeId) return; // Skip the prospect being edited
+        existingProspects.push({ id: doc.id, name: data.name });
+      });
+      
+      const isUnique = !existingProspects.some(prospect => 
+        prospect.name.toLowerCase().trim() === prospectName.toLowerCase().trim()
+      );
+      
+      return { success: true, isUnique, existingNames: existingProspects.map(p => p.name) };
+    } catch (error) {
+      console.error('Error checking prospect name uniqueness:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
   async saveProspect(userId, prospectData) {
     try {
+      // Check if prospect name is unique
+      const nameCheck = await this.checkProspectNameUnique(userId, prospectData.name);
+      if (!nameCheck.success) {
+        return { success: false, error: nameCheck.error };
+      }
+      
+      if (!nameCheck.isUnique) {
+        return { 
+          success: false, 
+          error: 'NAME_EXISTS',
+          existingNames: nameCheck.existingNames 
+        };
+      }
+
       const prospectsRef = collection(db, 'users', userId, 'prospects');
       const docRef = await addDoc(prospectsRef, {
         ...prospectData,
@@ -69,6 +106,20 @@ export const FirestoreService = {
 
   async updateProspect(userId, prospectId, prospectData) {
     try {
+      // Check if prospect name is unique (excluding current prospect)
+      const nameCheck = await this.checkProspectNameUnique(userId, prospectData.name, prospectId);
+      if (!nameCheck.success) {
+        return { success: false, error: nameCheck.error };
+      }
+      
+      if (!nameCheck.isUnique) {
+        return { 
+          success: false, 
+          error: 'NAME_EXISTS',
+          existingNames: nameCheck.existingNames 
+        };
+      }
+
       const prospectRef = doc(db, 'users', userId, 'prospects', prospectId);
       await updateDoc(prospectRef, {
         ...prospectData,

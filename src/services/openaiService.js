@@ -24,6 +24,28 @@ export class OpenAIService {
         context += '=== USER DATING PROFILE ===\n';
         context += 'Use this information to provide personalized dating advice:\n\n';
         
+        // Personal Information
+        if (profile.firstName || profile.lastName) {
+          context += `NAME: ${profile.firstName || ''} ${profile.lastName || ''}\n`;
+        }
+        if (profile.age) {
+          context += `AGE: ${profile.age} years old\n`;
+        }
+        if (profile.birthday) {
+          context += `BIRTHDAY: ${profile.birthday}\n`;
+        }
+        if (profile.city || profile.state) {
+          const location = [profile.city, profile.state].filter(Boolean).join(', ');
+          context += `LOCATION: ${location}\n`;
+        }
+        if (profile.occupation) {
+          context += `OCCUPATION: ${profile.occupation}\n`;
+        }
+        if (profile.interests) {
+          context += `INTERESTS & HOBBIES: ${profile.interests}\n`;
+        }
+        context += '\n';
+        
         // Handle new array format for dating values
         if (profile.values && Array.isArray(profile.values) && profile.values.length > 0) {
           context += `CORE VALUES (${profile.values.length} items):\n`;

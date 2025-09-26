@@ -17,6 +17,7 @@ import ProspectNotesScreen from '../screens/ProspectNotesScreen';
 import CalendarScreen from '../screens/CalendarScreen';
 import LoveAIChatScreen from '../screens/LoveAIChatScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
+import SettingsScreen from '../screens/SettingsScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -158,6 +159,14 @@ const MainStack = () => (
       component={UserProfileScreen} 
       options={{ 
         title: 'Dating Goals',
+        headerBackTitle: 'Back'
+      }}
+    />
+    <Stack.Screen 
+      name="Settings" 
+      component={SettingsScreen} 
+      options={{ 
+        title: 'Settings',
         headerBackTitle: 'Back'
       }}
     />
