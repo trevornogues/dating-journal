@@ -518,7 +518,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    maxWidth: '100%',
+    alignSelf: 'flex-start',
     borderWidth: 1,
     borderColor: '#FFB3B3',
     shadowColor: '#FF6B6B',
@@ -532,7 +532,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     marginRight: 8,
-    flex: 1,
     lineHeight: 18
   },
   removeButton: {

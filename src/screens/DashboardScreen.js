@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { useAuth } from '../utils/AuthContext';
 import { FirestoreService } from '../services/firestoreService';
@@ -86,7 +87,7 @@ export default function DashboardScreen({ navigation }) {
       }
     >
       <View style={styles.header}>
-        <Text style={styles.greeting}>Hello, {user?.name || 'there'}!</Text>
+        <Text style={styles.greeting}>Hello, {user?.name?.split(' ')[0] || 'there'}!</Text>
         <Text style={styles.subtitle}>Here's your dating overview</Text>
         <TouchableOpacity
           onPress={() => navigation.navigate('UserProfile')}
@@ -145,9 +146,13 @@ export default function DashboardScreen({ navigation }) {
                 onPress={() => navigation.navigate('ProspectDetail', { prospect })}
               >
                 <View style={styles.prospectAvatar}>
-                  <Text style={styles.prospectInitial}>
-                    {prospect.name.charAt(0).toUpperCase()}
-                  </Text>
+                  {prospect.photoUri ? (
+                    <Image source={{ uri: prospect.photoUri }} style={styles.prospectPhoto} />
+                  ) : (
+                    <Text style={styles.prospectInitial}>
+                      {prospect.name.charAt(0).toUpperCase()}
+                    </Text>
+                  )}
                 </View>
                 <Text style={styles.prospectName} numberOfLines={1}>
                   {prospect.name}
@@ -377,6 +382,11 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: 'white',
+  },
+  prospectPhoto: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
   },
   prospectName: {
     fontSize: 16,
