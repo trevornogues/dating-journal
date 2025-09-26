@@ -20,8 +20,8 @@ A React Native iOS app for managing your dating life, built with Expo.
   - Schedule dates with prospects
   - View upcoming and past dates
   - Add notes and locations to dates
-- **LoveAI Chat Assistant** (NEW!): 
-  - Personal AI dating advisor powered by GPT-4o
+- **LoveAI Chat Assistant**: 
+  - Personal AI dating advisor powered by GPT-5-mini
   - Contextual advice based on your prospects and notes
   - Available 24/7 for dating questions and guidance
   - Accessible via tab bar or dashboard card
@@ -30,7 +30,7 @@ A React Native iOS app for managing your dating life, built with Expo.
 
 ### Prerequisites
 
-- Node.js (v14 or newer)
+- Node.js (v20 LTS recommended)
 - npm or yarn
 - Expo CLI
 - iOS Simulator (for Mac) or Expo Go app on your iPhone
@@ -57,7 +57,7 @@ To use the LoveAI chat feature, you need to add your OpenAI API key:
 ```javascript
 export const OPENAI_CONFIG = {
   apiKey: 'sk-your-actual-api-key-here',
-  model: 'gpt-4o',
+  model: 'gpt-5-mini',
   apiUrl: 'https://api.openai.com/v1/chat/completions',
 };
 ```
@@ -100,7 +100,6 @@ dating-journal/
 │   ├── navigation/          # Navigation configuration
 │   │   └── AppNavigator.js
 │   ├── utils/               # Utilities and contexts
-│   │   ├── storage.js       # AsyncStorage service
 │   │   └── AuthContext.js   # Authentication context
 │   ├── services/            # External services
 │   │   └── openaiService.js # OpenAI API integration
@@ -151,7 +150,7 @@ dating-journal/
 
 ## Data Storage
 
-The app uses AsyncStorage for local data persistence. All data is stored on your device and persists between app sessions.
+The app uses Firebase Authentication (Email/Password) and Cloud Firestore for data. All user data is stored under `users/{uid}/...` with strict security rules (`request.auth.uid == userId`). Auth state persists locally using React Native AsyncStorage via Firebase Auth persistence.
 
 ## Customization
 
@@ -200,10 +199,10 @@ npm install
 
 - Built with React Native + Expo
 - Uses React Navigation for routing
-- AsyncStorage for data persistence
-- React Context for state management
-- OpenAI GPT-4o for AI chat functionality
-- No backend required (all data stored locally)
+- Firebase Auth (Email/Password) for authentication
+- Firestore for cloud data storage (user-scoped collections)
+- React Context for auth state management
+- OpenAI GPT for AI chat functionality
 
 ## Security Notes
 

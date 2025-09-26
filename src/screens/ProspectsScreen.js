@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,28 +6,46 @@ import {
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
+  Image,
 } from 'react-native';
-import { StorageService } from '../utils/storage';
+import { FirestoreService } from '../services/firestoreService';
+import { useAuth } from '../utils/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 
 export default function ProspectsScreen({ navigation }) {
+  const { user } = useAuth();
   const [prospects, setProspects] = useState([]);
   const [activeTab, setActiveTab] = useState('active'); // 'active' or 'graveyard'
   const [refreshing, setRefreshing] = useState(false);
 
   const loadProspects = async () => {
+    if (!user) return;
+    
     try {
-      const allProspects = await StorageService.getProspects();
-      setProspects(allProspects);
+      const result = await FirestoreService.getProspects(user.id);
+      if (result.success) {
+        setProspects(result.data);
+      }
     } catch (error) {
       console.error('Error loading prospects:', error);
     }
   };
 
+  // Set up real-time listener for prospects
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = FirestoreService.subscribeToProspects(user.id, (prospectsData) => {
+      setProspects(prospectsData);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
   useFocusEffect(
     useCallback(() => {
       loadProspects();
-    }, [])
+    }, [user])
   );
 
   const onRefresh = async () => {
@@ -50,9 +68,13 @@ export default function ProspectsScreen({ navigation }) {
       onPress={() => navigation.navigate('ProspectDetail', { prospect: item })}
     >
       <View style={styles.prospectAvatar}>
-        <Text style={styles.prospectInitial}>
-          {item.name.charAt(0).toUpperCase()}
-        </Text>
+        {item.photoUri ? (
+          <Image source={{ uri: item.photoUri }} style={styles.prospectPhoto} />
+        ) : (
+          <Text style={styles.prospectInitial}>
+            {item.name.charAt(0).toUpperCase()}
+          </Text>
+        )}
       </View>
       <View style={styles.prospectInfo}>
         <Text style={styles.prospectName}>{item.name}</Text>
@@ -202,6 +224,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: 'white',
+  },
+  prospectPhoto: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
   },
   prospectInfo: {
     flex: 1,

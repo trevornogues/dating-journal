@@ -1,3 +1,4 @@
+import AddProspectScreen from '../screens/AddProspectScreen';
 import React, { useState, useCallback } from 'react';
 import {
   View,
@@ -9,13 +10,20 @@ import {
   TextInput,
   Alert,
   Platform,
+  Image,
 } from 'react-native';
 import { Calendar } from 'react-native-calendars';
+// import RNPickerSelect from 'react-native-picker-select';
+import { useNavigation } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { StorageService } from '../utils/storage';
+import { FirestoreService } from '../services/firestoreService';
+import { useAuth } from '../utils/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 
+
 export default function CalendarScreen() {
+  const { user } = useAuth();
+  const navigation = useNavigation();
   const [dates, setDates] = useState([]);
   const [prospects, setProspects] = useState([]);
   const [selectedDate, setSelectedDate] = useState('');
@@ -24,19 +32,34 @@ export default function CalendarScreen() {
   
   // Form states
   const [prospectName, setProspectName] = useState('');
+  const [selectedProspect, setSelectedProspect] = useState(null);
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
   const [dateTime, setDateTime] = useState(new Date());
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showProspectPicker, setShowProspectPicker] = useState(false);
+  const [loadingProspects, setLoadingProspects] = useState(false);
+  const [addDateStep, setAddDateStep] = useState('prospect_choice'); // 'prospect_choice', 'existing_prospect', 'new_prospect', 'date_details'
+  const [selectedProspectForDate, setSelectedProspectForDate] = useState(null);
+  const [newProspectAge, setNewProspectAge] = useState('');
+  const [newProspectOccupation, setNewProspectOccupation] = useState('');
 
   const loadData = async () => {
+    if (!user) return;
+    
     try {
-      const [loadedDates, loadedProspects] = await Promise.all([
-        StorageService.getDates(),
-        StorageService.getProspects(),
+      const [datesResult, prospectsResult] = await Promise.all([
+        FirestoreService.getDates(user.id),
+        FirestoreService.getProspects(user.id),
       ]);
-      setDates(loadedDates);
-      setProspects(loadedProspects.filter(p => !p.inGraveyard));
+      
+      if (datesResult.success) {
+        setDates(datesResult.data);
+      }
+      
+       if (prospectsResult.success) {
+         setProspects(prospectsResult.data.filter(p => !p.inGraveyard));
+       }
     } catch (error) {
       console.error('Error loading data:', error);
     }
@@ -51,12 +74,16 @@ export default function CalendarScreen() {
   const getMarkedDates = () => {
     const marked = {};
     dates.forEach(date => {
-      const dateStr = date.dateTime.split('T')[0];
-      marked[dateStr] = {
-        marked: true,
-        dotColor: '#FF6B6B',
-        selectedColor: '#FF6B6B',
-      };
+      // Handle both dateTime and date fields
+      const dateField = date.dateTime || date.date;
+      if (dateField) {
+        const dateStr = dateField.split('T')[0];
+        marked[dateStr] = {
+          marked: true,
+          dotColor: '#FF6B6B',
+          selectedColor: '#FF6B6B',
+        };
+      }
     });
     if (selectedDate) {
       marked[selectedDate] = {
@@ -72,15 +99,19 @@ export default function CalendarScreen() {
     setSelectedDate(date);
     setEditingDate(null);
     setProspectName('');
+    setSelectedProspect(null);
+    setSelectedProspectForDate(null);
     setLocation('');
     setNotes('');
     setDateTime(new Date(date + 'T19:00:00'));
+    setAddDateStep('prospect_choice');
     setModalVisible(true);
   };
 
   const openEditDateModal = (dateItem) => {
     setEditingDate(dateItem);
     setProspectName(dateItem.prospectName);
+    setSelectedProspect(dateItem.prospectName);
     setLocation(dateItem.location || '');
     setNotes(dateItem.notes || '');
     setDateTime(new Date(dateItem.dateTime));
@@ -93,31 +124,40 @@ export default function CalendarScreen() {
       return;
     }
 
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in to save a date');
+      return;
+    }
+
     const dateObj = {
-      id: editingDate ? editingDate.id : Date.now().toString(),
       prospectName: prospectName.trim(),
       location: location.trim(),
       notes: notes.trim(),
       dateTime: dateTime.toISOString(),
-      createdAt: editingDate ? editingDate.createdAt : new Date().toISOString(),
     };
 
     try {
-      let updatedDates;
+      let result;
       if (editingDate) {
-        updatedDates = dates.map(d => d.id === editingDate.id ? dateObj : d);
+        result = await FirestoreService.updateDate(user.id, editingDate.id, dateObj);
       } else {
-        updatedDates = [...dates, dateObj];
+        result = await FirestoreService.saveDate(user.id, dateObj);
       }
-      await StorageService.saveDates(updatedDates);
-      setDates(updatedDates);
-      setModalVisible(false);
+      
+      if (result.success) {
+        setModalVisible(false);
+        loadData(); // Reload data to get updated list
+      } else {
+        Alert.alert('Error', result.error || 'Failed to save date');
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to save date');
     }
   };
 
   const deleteDate = (dateId) => {
+    if (!user) return;
+    
     Alert.alert(
       'Delete Date',
       'Are you sure you want to delete this date?',
@@ -128,9 +168,12 @@ export default function CalendarScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const updatedDates = dates.filter(d => d.id !== dateId);
-              await StorageService.saveDates(updatedDates);
-              setDates(updatedDates);
+              const result = await FirestoreService.deleteDate(user.id, dateId);
+              if (result.success) {
+                loadData(); // Reload data to get updated list
+              } else {
+                Alert.alert('Error', result.error || 'Failed to delete date');
+              }
             } catch (error) {
               Alert.alert('Error', 'Failed to delete date');
             }
@@ -153,8 +196,403 @@ export default function CalendarScreen() {
 
   const getDatesForSelectedDay = () => {
     if (!selectedDate) return [];
-    return dates.filter(date => date.dateTime.startsWith(selectedDate));
+    
+    // Filter dates for the selected day and sort chronologically by time
+    const dayDates = dates.filter(date => {
+      // Handle both dateTime and date fields
+      const dateField = date.dateTime || date.date;
+      if (!dateField) return false;
+      
+      // Create date objects in local timezone to avoid timezone conversion issues
+      const dateObj = new Date(dateField);
+      const dateStr = dateObj.getFullYear() + '-' + 
+                     String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + 
+                     String(dateObj.getDate()).padStart(2, '0');
+      
+      return dateStr === selectedDate;
+    });
+    
+    // Sort by time (chronological order)
+    return dayDates.sort((a, b) => {
+      const dateFieldA = a.dateTime || a.date;
+      const dateFieldB = b.dateTime || b.date;
+      const timeA = new Date(dateFieldA).getTime();
+      const timeB = new Date(dateFieldB).getTime();
+      return timeA - timeB;
+    });
   };
+
+  const handleSaveNewProspect = async () => {
+    if (!prospectName.trim()) {
+      Alert.alert('Error', 'Please enter a name');
+      return;
+    }
+
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in to save a prospect');
+      return;
+    }
+
+    const newProspect = {
+      name: prospectName.trim(),
+      age: newProspectAge.trim() ? parseInt(newProspectAge) : null,
+      occupation: newProspectOccupation.trim(),
+      interests: '',
+      notes: '',
+      whereWeMet: '',
+      inGraveyard: false,
+    };
+
+    try {
+      const result = await FirestoreService.saveProspect(user.id, newProspect);
+      if (result.success) {
+        // Set the newly created prospect as selected
+        setSelectedProspectForDate(result.data);
+        // Clear the form fields
+        setNewProspectAge('');
+        setNewProspectOccupation('');
+        // Move to date details step
+        setAddDateStep('date_details');
+        // Reload prospects list
+        await loadData();
+      } else {
+        Alert.alert('Error', result.error || 'Failed to save prospect');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save prospect');
+    }
+  };
+
+  const renderAddDateContent = () => {
+    if (editingDate) {
+      return renderEditDateForm();
+    }
+
+    switch (addDateStep) {
+      case 'prospect_choice':
+        return renderProspectChoiceStep();
+      case 'existing_prospect':
+        return renderExistingProspectStep();
+      case 'new_prospect':
+        return renderNewProspectStep();
+      case 'date_details':
+        return renderDateDetailsStep();
+      default:
+        return renderProspectChoiceStep();
+    }
+  };
+
+  const renderProspectChoiceStep = () => (
+    <>
+      <Text style={styles.modalTitle}>Add New Date</Text>
+      <Text style={styles.stepDescription}>
+        Who are you going on a date with?
+      </Text>
+      
+      <View style={styles.choiceButtons}>
+        <TouchableOpacity
+          style={[styles.choiceButton, styles.existingProspectButton]}
+          onPress={() => setAddDateStep('existing_prospect')}
+        >
+          <Text style={styles.choiceButtonText}>Existing Prospect</Text>
+          <Text style={styles.choiceButtonSubtext}>Choose from your list</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[styles.choiceButton, styles.newProspectButton]}
+          onPress={() => setAddDateStep('new_prospect')}
+        >
+          <Text style={styles.choiceButtonText}>New Prospect</Text>
+          <Text style={styles.choiceButtonSubtext}>Add someone new</Text>
+        </TouchableOpacity>
+      </View>
+      
+      <TouchableOpacity
+        style={[styles.modalButton, styles.cancelButton]}
+        onPress={() => setModalVisible(false)}
+      >
+        <Text style={styles.cancelButtonText}>Cancel</Text>
+      </TouchableOpacity>
+    </>
+  );
+
+  const renderExistingProspectStep = () => (
+    <>
+      <Text style={styles.modalTitle}>Select Prospect</Text>
+      <Text style={styles.stepDescription}>
+        Choose from your existing prospects
+      </Text>
+      
+      <ScrollView style={styles.prospectListContainer}>
+        {prospects.map((prospect) => (
+          <TouchableOpacity
+            key={prospect.id}
+            style={styles.prospectListItem}
+            onPress={() => {
+              setSelectedProspectForDate(prospect);
+              setProspectName(prospect.name);
+              setAddDateStep('date_details');
+            }}
+          >
+            <View style={styles.prospectListItemHeader}>
+              <View style={styles.prospectListItemAvatar}>
+                {prospect.photoUri ? (
+                  <Image source={{ uri: prospect.photoUri }} style={styles.prospectListItemPhoto} />
+                ) : (
+                  <Text style={styles.prospectListItemInitial}>
+                    {prospect.name.charAt(0).toUpperCase()}
+                  </Text>
+                )}
+              </View>
+              <View style={styles.prospectListItemInfo}>
+                <Text style={styles.prospectListItemName}>{prospect.name}</Text>
+                <Text style={styles.prospectListItemDetails}>
+                  {prospect.age ? `${prospect.age} years` : 'Age not set'} • {prospect.occupation || 'No occupation'}
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      
+      <View style={styles.stepButtons}>
+        <TouchableOpacity
+          style={[styles.modalButton, styles.backButton]}
+          onPress={() => setAddDateStep('prospect_choice')}
+        >
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modalButton, styles.cancelButton]}
+          onPress={() => setModalVisible(false)}
+        >
+          <Text style={styles.cancelButtonText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    </>
+  );
+
+  const renderNewProspectStep = () => (
+    <>
+      <Text style={styles.modalTitle}>Add New Prospect</Text>
+      <Text style={styles.stepDescription}>
+        Tell us about this new person
+      </Text>
+      
+      <ScrollView style={styles.newProspectForm}>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Name *</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter name"
+            value={prospectName}
+            onChangeText={setProspectName}
+          />
+        </View>
+        
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Age</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter age"
+            value={newProspectAge}
+            onChangeText={setNewProspectAge}
+            keyboardType="numeric"
+          />
+        </View>
+        
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Occupation</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="What do they do?"
+            value={newProspectOccupation}
+            onChangeText={setNewProspectOccupation}
+          />
+        </View>
+      </ScrollView>
+      
+      <View style={styles.stepButtons}>
+        <TouchableOpacity
+          style={[styles.modalButton, styles.backButton]}
+          onPress={() => setAddDateStep('prospect_choice')}
+        >
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modalButton, styles.saveButton]}
+          onPress={handleSaveNewProspect}
+        >
+          <Text style={styles.saveButtonText}>Save & Continue</Text>
+        </TouchableOpacity>
+      </View>
+    </>
+  );
+
+  const renderDateDetailsStep = () => (
+    <>
+      <Text style={styles.dateWithHeader}>
+        Date with {selectedProspectForDate?.name || prospectName}
+      </Text>
+      <Text style={styles.stepDescription}>
+        Fill in the details for your date
+      </Text>
+      
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>Time</Text>
+        <TouchableOpacity
+          style={styles.timeButton}
+          onPress={() => setShowTimePicker(true)}
+        >
+          <Text style={styles.timeButtonText}>
+            {dateTime.toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+            })}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {showTimePicker && (
+        <DateTimePicker
+          value={dateTime}
+          mode="time"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(event, selected) => {
+            setShowTimePicker(Platform.OS !== 'ios');
+            if (selected) {
+              const newDateTime = new Date(dateTime);
+              newDateTime.setHours(selected.getHours());
+              newDateTime.setMinutes(selected.getMinutes());
+              setDateTime(newDateTime);
+            }
+          }}
+        />
+      )}
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>Location</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Where are you going?"
+          value={location}
+          onChangeText={setLocation}
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>Notes</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          placeholder="How are you feeling? What are your goals for this date? Any nervousness or excitement you want to remember? What are your intentions with this person?"
+          value={notes}
+          onChangeText={setNotes}
+          multiline
+          numberOfLines={3}
+        />
+      </View>
+      
+      <View style={styles.stepButtons}>
+        <TouchableOpacity
+          style={[styles.modalButton, styles.backButton]}
+          onPress={() => setAddDateStep('existing_prospect')}
+        >
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modalButton, styles.saveButton]}
+          onPress={saveDate}
+        >
+          <Text style={styles.saveButtonText}>Save Date</Text>
+        </TouchableOpacity>
+      </View>
+    </>
+  );
+
+  const renderEditDateForm = () => (
+    <>
+      <Text style={styles.modalTitle}>Edit Date</Text>
+      
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>With whom?</Text>
+        <TextInput
+          style={styles.input}
+          value={prospectName}
+          onChangeText={setProspectName}
+          placeholder="Prospect name"
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>Time</Text>
+        <TouchableOpacity
+          style={styles.timeButton}
+          onPress={() => setShowTimePicker(true)}
+        >
+          <Text style={styles.timeButtonText}>
+            {dateTime.toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+            })}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {showTimePicker && (
+        <DateTimePicker
+          value={dateTime}
+          mode="time"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(event, selected) => {
+            setShowTimePicker(Platform.OS !== 'ios');
+            if (selected) {
+              const newDateTime = new Date(dateTime);
+              newDateTime.setHours(selected.getHours());
+              newDateTime.setMinutes(selected.getMinutes());
+              setDateTime(newDateTime);
+            }
+          }}
+        />
+      )}
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>Location</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Where are you going?"
+          value={location}
+          onChangeText={setLocation}
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>Notes</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          placeholder="Any additional notes..."
+          value={notes}
+          onChangeText={setNotes}
+          multiline
+          numberOfLines={3}
+        />
+      </View>
+
+      <View style={styles.modalButtons}>
+        <TouchableOpacity
+          style={[styles.modalButton, styles.cancelButton]}
+          onPress={() => setModalVisible(false)}
+        >
+          <Text style={styles.cancelButtonText}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modalButton, styles.saveButton]}
+          onPress={saveDate}
+        >
+          <Text style={styles.saveButtonText}>Save</Text>
+        </TouchableOpacity>
+      </View>
+    </>
+  );
 
   return (
     <View style={styles.container}>
@@ -171,9 +609,9 @@ export default function CalendarScreen() {
 
       <ScrollView style={styles.datesList}>
         {selectedDate && (
-          <View style={styles.selectedDateHeader}>
+          <View style={styles.selectedDateSection}>
             <Text style={styles.selectedDateText}>
-              {new Date(selectedDate).toLocaleDateString('en-US', {
+              {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-US', {
                 weekday: 'long',
                 year: 'numeric',
                 month: 'long',
@@ -197,7 +635,7 @@ export default function CalendarScreen() {
           >
             <View style={styles.dateInfo}>
               <Text style={styles.datePerson}>{date.prospectName}</Text>
-              <Text style={styles.dateTime}>{formatDateTime(date.dateTime)}</Text>
+              <Text style={styles.dateTime}>{formatDateTime(date.dateTime || date.date)}</Text>
               {date.location && (
                 <Text style={styles.dateLocation}>📍 {date.location}</Text>
               )}
@@ -229,88 +667,62 @@ export default function CalendarScreen() {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {editingDate ? 'Edit Date' : 'Add New Date'}
+            {renderAddDateContent()}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Prospect Picker Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={showProspectPicker}
+        onRequestClose={() => setShowProspectPicker(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={prospectPickerStyles.prospectPickerContent}>
+            <Text style={prospectPickerStyles.prospectPickerTitle}>
+              Select a Prospect ({prospects.length} available)
             </Text>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>With whom?</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter prospect name"
-                value={prospectName}
-                onChangeText={setProspectName}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Time</Text>
+            
+            <ScrollView style={prospectPickerStyles.prospectList}>
+              {loadingProspects ? (
+                <Text style={prospectPickerStyles.prospectItemText}>Loading prospects...</Text>
+              ) : prospects.length === 0 ? (
+                <Text style={prospectPickerStyles.prospectItemText}>No prospects found</Text>
+              ) : (
+                prospects.map((prospect) => (
+                  <TouchableOpacity
+                    key={prospect.id}
+                    style={prospectPickerStyles.prospectItem}
+                    onPress={() => {
+                      setSelectedProspect(prospect.id);
+                      setProspectName(prospect.name);
+                      setShowProspectPicker(false);
+                    }}
+                  >
+                    <Text style={prospectPickerStyles.prospectItemText}>{prospect.name}</Text>
+                  </TouchableOpacity>
+                ))
+              )}
+              
               <TouchableOpacity
-                style={styles.timeButton}
-                onPress={() => setShowTimePicker(true)}
-              >
-                <Text style={styles.timeButtonText}>
-                  {dateTime.toLocaleTimeString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  })}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {showTimePicker && (
-              <DateTimePicker
-                value={dateTime}
-                mode="time"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(event, selected) => {
-                  setShowTimePicker(Platform.OS !== 'ios');
-                  if (selected) {
-                    const newDateTime = new Date(selectedDate);
-                    newDateTime.setHours(selected.getHours());
-                    newDateTime.setMinutes(selected.getMinutes());
-                    setDateTime(newDateTime);
-                  }
+                style={[prospectPickerStyles.prospectItem, prospectPickerStyles.addNewProspectItem]}
+                onPress={() => {
+                  setShowProspectPicker(false);
+                  navigation.navigate('AddProspect');
                 }}
-              />
-            )}
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Location</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Where are you going?"
-                value={location}
-                onChangeText={setLocation}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Notes</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Any additional notes..."
-                value={notes}
-                onChangeText={setNotes}
-                multiline
-                numberOfLines={3}
-              />
-            </View>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setModalVisible(false)}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={prospectPickerStyles.addNewProspectText}>+ Add new prospect</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={saveDate}
-              >
-                <Text style={styles.saveButtonText}>Save</Text>
-              </TouchableOpacity>
-            </View>
+            </ScrollView>
+            
+            <TouchableOpacity
+              style={prospectPickerStyles.cancelProspectButton}
+              onPress={() => setShowProspectPicker(false)}
+            >
+              <Text style={prospectPickerStyles.cancelProspectButtonText}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -327,62 +739,72 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 15,
   },
-  selectedDateHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
+  selectedDateSection: {
+    marginBottom: 20,
   },
   selectedDateText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#2C3E50',
   },
   addDateButton: {
     backgroundColor: '#FF6B6B',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    shadowColor: '#FF6B6B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+    alignSelf: 'flex-start',
+    marginTop: 10,
   },
   addDateButtonText: {
     color: 'white',
-    fontWeight: '600',
+    fontWeight: '700',
+    fontSize: 16,
   },
   dateCard: {
     flexDirection: 'row',
     backgroundColor: 'white',
-    padding: 15,
-    marginBottom: 10,
-    borderRadius: 10,
+    padding: 20,
+    marginBottom: 15,
+    borderRadius: 15,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
   },
   dateInfo: {
     flex: 1,
   },
   datePerson: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 5,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#2C3E50',
+    marginBottom: 8,
   },
   dateTime: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 3,
+    fontSize: 15,
+    color: '#7F8C8D',
+    marginBottom: 5,
+    fontWeight: '500',
   },
   dateLocation: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 3,
+    fontSize: 15,
+    color: '#7F8C8D',
+    marginBottom: 5,
+    fontWeight: '500',
   },
   dateNotes: {
-    fontSize: 13,
-    color: '#999',
-    marginTop: 5,
+    fontSize: 14,
+    color: '#95A5A6',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   deleteButton: {
     width: 30,
@@ -408,30 +830,68 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: 'white',
     margin: 20,
-    borderRadius: 20,
-    padding: 25,
+    borderRadius: 25,
+    padding: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
   },
   modalTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 20,
+    color: '#2C3E50',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  dateWithHeader: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#2C3E50',
+    marginBottom: 15,
+    textAlign: 'center',
+    lineHeight: 38,
   },
   inputGroup: {
     marginBottom: 20,
   },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  input: {
+  pickerButton: {
     backgroundColor: '#f5f5f5',
     paddingHorizontal: 15,
     paddingVertical: 12,
     borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  pickerButtonText: {
     fontSize: 16,
+    color: '#333',
+    flex: 1,
+  },
+  pickerArrow: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 10,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#2C3E50',
+    marginBottom: 12,
+  },
+  input: {
+    backgroundColor: '#F8F9FA',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderRadius: 12,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#E9ECEF',
+    color: '#2C3E50',
   },
   textArea: {
     paddingTop: 12,
@@ -439,14 +899,17 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   timeButton: {
-    backgroundColor: '#f5f5f5',
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    borderRadius: 10,
+    backgroundColor: '#F8F9FA',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E9ECEF',
   },
   timeButtonText: {
     fontSize: 16,
-    color: '#333',
+    color: '#2C3E50',
+    fontWeight: '600',
   },
   modalButtons: {
     flexDirection: 'row',
@@ -455,17 +918,24 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     flex: 0.48,
-    paddingVertical: 15,
-    borderRadius: 10,
+    paddingVertical: 18,
+    borderRadius: 15,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   cancelButton: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1,
+    borderColor: '#E9ECEF',
   },
   cancelButtonText: {
-    color: '#666',
+    color: '#6C757D',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   saveButton: {
     backgroundColor: '#FF6B6B',
@@ -473,6 +943,212 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: 'white',
     fontSize: 16,
+    fontWeight: '700',
+  },
+  stepDescription: {
+    fontSize: 16,
+    color: '#7F8C8D',
+    textAlign: 'center',
+    marginBottom: 30,
+    lineHeight: 22,
+  },
+  choiceButtons: {
+    marginBottom: 30,
+  },
+  choiceButton: {
+    padding: 25,
+    borderRadius: 20,
+    marginBottom: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  existingProspectButton: {
+    backgroundColor: '#E3F2FD',
+    borderWidth: 2,
+    borderColor: '#2196F3',
+  },
+  newProspectButton: {
+    backgroundColor: '#E8F5E8',
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+  },
+  choiceButtonText: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+    color: '#2C3E50',
+  },
+  choiceButtonSubtext: {
+    fontSize: 15,
+    color: '#7F8C8D',
+    fontWeight: '500',
+  },
+  prospectListContainer: {
+    maxHeight: 300,
+    marginBottom: 20,
+  },
+  prospectListItem: {
+    backgroundColor: 'white',
+    padding: 20,
+    marginBottom: 15,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#E8F4FD',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  prospectListItemName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#2C3E50',
+    marginBottom: 8,
+  },
+  prospectListItemDetails: {
+    fontSize: 15,
+    color: '#7F8C8D',
+    fontWeight: '500',
+  },
+  prospectListItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  prospectListItemAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FF6B6B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  prospectListItemPhoto: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  prospectListItemInitial: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  prospectListItemInfo: {
+    flex: 1,
+  },
+  newProspectForm: {
+    maxHeight: 300,
+    marginBottom: 20,
+  },
+  stepButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+  },
+  backButton: {
+    backgroundColor: '#F8F9FA',
+    flex: 0.48,
+    borderWidth: 1,
+    borderColor: '#E9ECEF',
+  },
+  backButtonText: {
+    color: '#6C757D',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+});
+
+const pickerSelectStyles = StyleSheet.create({
+  inputIOS: {
+    backgroundColor: 'transparent',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#333',
+    borderWidth: 0,
+  },
+  inputAndroid: {
+    backgroundColor: 'transparent',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#333',
+    borderWidth: 0,
+  },
+  placeholder: {
+    color: '#999',
+    fontSize: 16,
+  },
+  iconContainer: {
+    top: 15,
+    right: 15,
+  },
+});
+
+const prospectPickerStyles = StyleSheet.create({
+  prospectPickerContent: {
+    backgroundColor: 'white',
+    margin: 20,
+    borderRadius: 20,
+    padding: 25,
+    maxHeight: '80%',
+  },
+  prospectPickerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  prospectList: {
+    maxHeight: 400,
+    marginBottom: 20,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 10,
+    padding: 10,
+  },
+  prospectItem: {
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    backgroundColor: 'white',
+    marginHorizontal: 0,
+    marginVertical: 2,
+    borderRadius: 8,
+    minHeight: 50,
+  },
+  prospectItemText: {
+    fontSize: 18,
+    color: '#333',
+    fontWeight: '500',
+  },
+  addNewProspectItem: {
+    backgroundColor: '#f8f9fa',
+    borderBottomWidth: 0,
+    borderRadius: 10,
+    marginTop: 10,
+  },
+  addNewProspectText: {
+    fontSize: 16,
+    color: '#FF6B6B',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  cancelProspectButton: {
+    backgroundColor: '#f0f0f0',
+    paddingVertical: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  cancelProspectButtonText: {
+    color: '#666',
+    fontSize: 16,
     fontWeight: '600',
   },
-}); 
+});

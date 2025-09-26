@@ -7,50 +7,46 @@ import {
   StyleSheet,
   Alert,
   TextInput,
+  Image,
 } from 'react-native';
-import { StorageService } from '../utils/storage';
+import * as ImagePicker from 'expo-image-picker';
+import { FirestoreService } from '../services/firestoreService';
+import { StorageService } from '../services/storageService';
+import { useAuth } from '../utils/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function ProspectDetailScreen({ route, navigation }) {
+  const { user } = useAuth();
   const { prospect: initialProspect } = route.params;
   const [prospect, setProspect] = useState(initialProspect);
   const [isEditing, setIsEditing] = useState(false);
   const [editedProspect, setEditedProspect] = useState(initialProspect);
   const [notesCount, setNotesCount] = useState(0);
 
-  useEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity
-          onPress={() => setIsEditing(!isEditing)}
-          style={styles.headerButton}
-        >
-          <Text style={styles.headerButtonText}>
-            {isEditing ? 'Cancel' : 'Edit'}
-          </Text>
-        </TouchableOpacity>
-      ),
-    });
-  }, [isEditing, navigation]);
 
   useEffect(() => {
     loadNotesCount();
   }, []);
 
   const loadNotesCount = async () => {
-    const notes = await StorageService.getNotesForProspect(prospect.id);
-    setNotesCount(notes.length);
+    if (!user) return;
+    
+    const result = await FirestoreService.getNotesForProspect(user.id, prospect.id);
+    if (result.success) {
+      setNotesCount(result.data.length);
+    }
   };
 
   const handleSave = async () => {
+    if (!user) return;
+    
     try {
-      const prospects = await StorageService.getProspects();
-      const index = prospects.findIndex(p => p.id === prospect.id);
-      if (index !== -1) {
-        prospects[index] = { ...editedProspect };
-        await StorageService.saveProspects(prospects);
+      const result = await FirestoreService.updateProspect(user.id, prospect.id, editedProspect);
+      if (result.success) {
         setProspect(editedProspect);
         setIsEditing(false);
+      } else {
+        Alert.alert('Error', result.error || 'Failed to save changes');
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to save changes');
@@ -58,6 +54,8 @@ export default function ProspectDetailScreen({ route, navigation }) {
   };
 
   const handleMoveToGraveyard = () => {
+    if (!user) return;
+    
     Alert.alert(
       'Move to Graveyard',
       'Are you sure you want to move this prospect to the graveyard?',
@@ -68,12 +66,11 @@ export default function ProspectDetailScreen({ route, navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              const prospects = await StorageService.getProspects();
-              const index = prospects.findIndex(p => p.id === prospect.id);
-              if (index !== -1) {
-                prospects[index].inGraveyard = true;
-                await StorageService.saveProspects(prospects);
+              const result = await FirestoreService.updateProspect(user.id, prospect.id, { inGraveyard: true });
+              if (result.success) {
                 navigation.goBack();
+              } else {
+                Alert.alert('Error', result.error || 'Failed to move to graveyard');
               }
             } catch (error) {
               Alert.alert('Error', 'Failed to move to graveyard');
@@ -84,7 +81,37 @@ export default function ProspectDetailScreen({ route, navigation }) {
     );
   };
 
+  const handleMoveToActive = () => {
+    if (!user) return;
+    
+    Alert.alert(
+      'Move to Active',
+      'Are you sure you want to move this prospect back to active?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Move',
+          style: 'default',
+          onPress: async () => {
+            try {
+              const result = await FirestoreService.updateProspect(user.id, prospect.id, { inGraveyard: false });
+              if (result.success) {
+                navigation.goBack();
+              } else {
+                Alert.alert('Error', result.error || 'Failed to move to active');
+              }
+            } catch (error) {
+              Alert.alert('Error', 'Failed to move to active');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleDelete = () => {
+    if (!user) return;
+    
     Alert.alert(
       'Delete Prospect',
       'Are you sure you want to permanently delete this prospect?',
@@ -95,10 +122,12 @@ export default function ProspectDetailScreen({ route, navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              const prospects = await StorageService.getProspects();
-              const filteredProspects = prospects.filter(p => p.id !== prospect.id);
-              await StorageService.saveProspects(filteredProspects);
-              navigation.goBack();
+              const result = await FirestoreService.deleteProspect(user.id, prospect.id, prospect);
+              if (result.success) {
+                navigation.goBack();
+              } else {
+                Alert.alert('Error', result.error || 'Failed to delete prospect');
+              }
             } catch (error) {
               Alert.alert('Error', 'Failed to delete prospect');
             }
@@ -106,6 +135,67 @@ export default function ProspectDetailScreen({ route, navigation }) {
         },
       ]
     );
+  };
+
+  const pickImage = async () => {
+    if (!user) return;
+
+    // Request permission
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Sorry, we need camera roll permissions to upload photos!');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      const imageUri = result.assets[0].uri;
+      
+      try {
+        // Show loading state
+        Alert.alert('Uploading...', 'Please wait while we upload your photo to the cloud.');
+        
+        // Try Firebase Storage first
+        const uploadResult = await StorageService.uploadProspectPhoto(user.id, prospect.id, imageUri);
+        
+        if (uploadResult.success) {
+          // Update the prospect with the Firebase Storage URL
+          const updatedProspect = { ...editedProspect, photoUri: uploadResult.downloadURL };
+          setEditedProspect(updatedProspect);
+          
+          // Save to Firestore
+          const saveResult = await FirestoreService.updateProspect(user.id, prospect.id, updatedProspect);
+          if (saveResult.success) {
+            setProspect(updatedProspect);
+            Alert.alert('Success', 'Photo uploaded and saved successfully!');
+          } else {
+            Alert.alert('Error', saveResult.error || 'Failed to save photo to database');
+          }
+        } else {
+          // Fallback: Save local URI for now (temporary solution)
+          console.warn('Firebase Storage failed, using local URI as fallback:', uploadResult.error);
+          const updatedProspect = { ...editedProspect, photoUri: imageUri };
+          setEditedProspect(updatedProspect);
+          
+          const saveResult = await FirestoreService.updateProspect(user.id, prospect.id, updatedProspect);
+          if (saveResult.success) {
+            setProspect(updatedProspect);
+            Alert.alert('Success', 'Photo saved locally (cloud upload failed - check Firebase Storage setup)');
+          } else {
+            Alert.alert('Error', saveResult.error || 'Failed to save photo');
+          }
+        }
+      } catch (error) {
+        console.error('Photo upload error:', error);
+        Alert.alert('Error', 'Failed to upload photo. Please try again.');
+      }
+    }
   };
 
   const formatDate = (dateString) => {
@@ -120,11 +210,18 @@ export default function ProspectDetailScreen({ route, navigation }) {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {prospect.name.charAt(0).toUpperCase()}
-          </Text>
-        </View>
+        <TouchableOpacity style={styles.avatar} onPress={pickImage}>
+          {prospect.photoUri ? (
+            <Image source={{ uri: prospect.photoUri }} style={styles.avatarPhoto} />
+          ) : (
+            <Text style={styles.avatarText}>
+              {prospect.name.charAt(0).toUpperCase()}
+            </Text>
+          )}
+          <View style={styles.photoOverlay}>
+            <Ionicons name="camera" size={16} color="white" />
+          </View>
+        </TouchableOpacity>
         {isEditing ? (
           <TextInput
             style={styles.nameInput}
@@ -255,18 +352,48 @@ export default function ProspectDetailScreen({ route, navigation }) {
         )}
       </View>
 
-      {isEditing ? (
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>Save Changes</Text>
+      {/* Edit Button - Fallback if header button doesn't work */}
+      {!isEditing && (
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={() => setIsEditing(true)}
+        >
+          <Text style={styles.editButtonText}>✏️ Edit Prospect</Text>
         </TouchableOpacity>
+      )}
+
+      {isEditing ? (
+        <>
+          <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+            <Text style={styles.saveButtonText}>Save Changes</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.cancelButton} 
+            onPress={() => {
+              setIsEditing(false);
+              setEditedProspect(prospect); // Reset to original values
+            }}
+          >
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </TouchableOpacity>
+        </>
       ) : (
         <>
-          <TouchableOpacity
-            style={styles.graveyardButton}
-            onPress={handleMoveToGraveyard}
-          >
-            <Text style={styles.graveyardButtonText}>Move to Graveyard</Text>
-          </TouchableOpacity>
+          {prospect.inGraveyard ? (
+            <TouchableOpacity
+              style={styles.activeButton}
+              onPress={handleMoveToActive}
+            >
+              <Text style={styles.activeButtonText}>Move to Active</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.graveyardButton}
+              onPress={handleMoveToGraveyard}
+            >
+              <Text style={styles.graveyardButtonText}>Move to Graveyard</Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
             <Text style={styles.deleteButtonText}>Delete Prospect</Text>
@@ -297,11 +424,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 15,
+    position: 'relative',
   },
   avatarText: {
     fontSize: 40,
     fontWeight: 'bold',
     color: 'white',
+  },
+  avatarPhoto: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  photoOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   name: {
     fontSize: 28,
@@ -317,14 +461,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
-  headerButton: {
-    paddingHorizontal: 15,
-    paddingVertical: 5,
+  editButton: {
+    backgroundColor: '#FF6B6B',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderRadius: 10,
+    marginBottom: 10,
+    alignItems: 'center',
   },
-  headerButtonText: {
-    color: '#FF6B6B',
+  editButtonText: {
+    color: 'white',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  cancelButton: {
+    backgroundColor: '#F8F9FA',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderRadius: 10,
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#6C757D',
+    fontSize: 16,
+    fontWeight: '700',
   },
   notesButton: {
     flexDirection: 'row',
@@ -429,6 +590,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   graveyardButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  activeButton: {
+    backgroundColor: '#4CAF50',
+    margin: 20,
+    marginBottom: 10,
+    paddingVertical: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  activeButtonText: {
     color: 'white',
     fontSize: 18,
     fontWeight: '600',

@@ -25,7 +25,6 @@ function AppContent() {
 }
 
 export default function App() {
-  console.log("Loaded key:", OPENAI_API_KEY); // should print your key in Metro logs
   return (
     <AuthProvider>
       <AppContent />

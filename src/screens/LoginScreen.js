@@ -26,7 +26,10 @@ export default function LoginScreen({ navigation }) {
 
     setIsLoading(true);
     try {
-      await login(email, password);
+      const result = await login(email, password);
+      if (!result.success) {
+        Alert.alert('Login Failed', result.error);
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to login. Please try again.');
     } finally {

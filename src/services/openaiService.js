@@ -1,25 +1,81 @@
 import axios from 'axios';
 import { OPENAI_CONFIG, SYSTEM_PROMPT } from '../config/openai';
-import { StorageService } from '../utils/storage';
+import { FirestoreService } from './firestoreService';
 
 export class OpenAIService {
-  static async generateDatingContext() {
+  static async generateDatingContext(userId) {
     try {
-      // Get all prospects and notes
-      const [prospects, allNotes] = await Promise.all([
-        StorageService.getProspects(),
-        StorageService.getNotes(),
-      ]);
+      if (!userId) {
+        return "User not authenticated.";
+      }
+      // Load user profile
+      const profileRes = await FirestoreService.getUserProfile(userId);
+      const profile = profileRes.success ? profileRes.data : null;
+      // Load prospects for this user
+      const prospectsResult = await FirestoreService.getProspects(userId);
+      const prospects = prospectsResult.success ? prospectsResult.data : [];
 
       // Filter active prospects only
       const activeProspects = prospects.filter(p => !p.inGraveyard);
 
-      if (activeProspects.length === 0) {
-        return "The user currently has no active dating prospects.";
+      // Build context string with profile and latest notes per prospect
+      let context = '';
+      if (profile) {
+        context += '=== USER DATING PROFILE ===\n';
+        context += 'Use this information to provide personalized dating advice:\n\n';
+        
+        // Handle new array format for dating values
+        if (profile.values && Array.isArray(profile.values) && profile.values.length > 0) {
+          context += `CORE VALUES (${profile.values.length} items):\n`;
+          profile.values.forEach((value, index) => {
+            context += `${index + 1}. ${value}\n`;
+          });
+          context += '\n';
+        } else if (profile.values && typeof profile.values === 'string') {
+          context += `CORE VALUES: ${profile.values}\n\n`;
+        }
+        
+        if (profile.lookingFor && Array.isArray(profile.lookingFor) && profile.lookingFor.length > 0) {
+          context += `WHAT THEY'RE LOOKING FOR (${profile.lookingFor.length} items):\n`;
+          profile.lookingFor.forEach((item, index) => {
+            context += `${index + 1}. ${item}\n`;
+          });
+          context += '\n';
+        } else if (profile.lookingFor && typeof profile.lookingFor === 'string') {
+          context += `WHAT THEY'RE LOOKING FOR: ${profile.lookingFor}\n\n`;
+        }
+        
+        if (profile.boundaries && Array.isArray(profile.boundaries) && profile.boundaries.length > 0) {
+          context += `BOUNDARIES (${profile.boundaries.length} items):\n`;
+          profile.boundaries.forEach((boundary, index) => {
+            context += `${index + 1}. ${boundary}\n`;
+          });
+          context += '\n';
+        } else if (profile.boundaries && typeof profile.boundaries === 'string') {
+          context += `BOUNDARIES: ${profile.boundaries}\n\n`;
+        }
+        
+        if (profile.dealBreakers && Array.isArray(profile.dealBreakers) && profile.dealBreakers.length > 0) {
+          context += `DEAL BREAKERS (${profile.dealBreakers.length} items):\n`;
+          profile.dealBreakers.forEach((dealBreaker, index) => {
+            context += `${index + 1}. ${dealBreaker}\n`;
+          });
+          context += '\n';
+        } else if (profile.dealBreakers && typeof profile.dealBreakers === 'string') {
+          context += `DEAL BREAKERS: ${profile.dealBreakers}\n\n`;
+        }
+        
+        context += '=== END USER PROFILE ===\n\n';
+      } else {
+        context += 'User Profile: not set yet. Encourage them to fill out their dating values.\n\n';
       }
 
-      // Build context string
-      let context = "Current Dating Prospects:\n\n";
+      if (activeProspects.length === 0) {
+        context += "The user currently has no active dating prospects.";
+        return context;
+      }
+
+      context += "Current Dating Prospects:\n\n";
 
       for (const prospect of activeProspects) {
         context += `**${prospect.name}**\n`;
@@ -30,7 +86,8 @@ export class OpenAIService {
         if (prospect.notes) context += `- General notes: ${prospect.notes}\n`;
 
         // Add timeline notes for this prospect
-        const prospectNotes = allNotes.filter(note => note.prospectId === prospect.id);
+        const notesRes = await FirestoreService.getNotesForProspect(userId, prospect.id);
+        const prospectNotes = notesRes.success ? notesRes.data : [];
         if (prospectNotes.length > 0) {
           context += `- Timeline notes:\n`;
           prospectNotes
@@ -51,14 +108,14 @@ export class OpenAIService {
     }
   }
 
-  static async sendMessage(userMessage, conversationHistory = []) {
+  static async sendMessage(userMessage, conversationHistory = [], userId) {
     if (!OPENAI_CONFIG.apiKey || OPENAI_CONFIG.apiKey === 'YOUR_OPENAI_API_KEY_HERE') {
       throw new Error('Please configure your OpenAI API key in src/config/openai.js');
     }
 
     try {
       // Generate current dating context
-      const datingContext = await this.generateDatingContext();
+      const datingContext = await this.generateDatingContext(userId);
 
       // Build messages array
       const messages = [

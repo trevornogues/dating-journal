@@ -14,8 +14,108 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { OpenAIService } from '../services/openaiService';
 import { OPENAI_CONFIG } from '../config/openai';
+import { useAuth } from '../utils/AuthContext';
+
+// Enhanced markdown parser for better formatting
+const parseMarkdown = (text) => {
+  if (!text) return [];
+  
+  const lines = text.split('\n');
+  const elements = [];
+  let key = 0;
+
+  const parseInlineFormatting = (text) => {
+    if (!text.includes('**')) return text;
+    
+    const parts = text.split(/(\*\*[^*]+\*\*)/);
+    return parts.map((part, index) => {
+      if (part.match(/\*\*[^*]+\*\*/)) {
+        return (
+          <Text key={index} style={styles.boldText}>
+            {part.replace(/\*\*/g, '')}
+          </Text>
+        );
+      }
+      return part;
+    });
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmedLine = line.trim();
+    
+    // Headers (###, ##, #)
+    if (trimmedLine.match(/^### /)) {
+      const content = trimmedLine.replace(/^### /, '');
+      elements.push(
+        <Text key={key++} style={styles.header3}>
+          {parseInlineFormatting(content)}
+        </Text>
+      );
+    } else if (trimmedLine.match(/^## /)) {
+      const content = trimmedLine.replace(/^## /, '');
+      elements.push(
+        <Text key={key++} style={styles.header2}>
+          {parseInlineFormatting(content)}
+        </Text>
+      );
+    } else if (trimmedLine.match(/^# /)) {
+      const content = trimmedLine.replace(/^# /, '');
+      elements.push(
+        <Text key={key++} style={styles.header1}>
+          {parseInlineFormatting(content)}
+        </Text>
+      );
+    }
+    // Sub-bullet points (indented)
+    else if (line.match(/^    [-*] /) || line.match(/^\t[-*] /)) {
+      const content = line.replace(/^    [-*] |^\t[-*] /, '');
+      elements.push(
+        <Text key={key++} style={styles.subBulletPoint}>
+          ◦ {parseInlineFormatting(content)}
+        </Text>
+      );
+    }
+    // Regular bullet points
+    else if (trimmedLine.match(/^[-*] /)) {
+      const content = trimmedLine.replace(/^[-*] /, '');
+      elements.push(
+        <Text key={key++} style={styles.bulletPoint}>
+          • {parseInlineFormatting(content)}
+        </Text>
+      );
+    }
+    // Numbered lists
+    else if (trimmedLine.match(/^\d+\. /)) {
+      elements.push(
+        <Text key={key++} style={styles.numberedPoint}>
+          {parseInlineFormatting(trimmedLine)}
+        </Text>
+      );
+    }
+    // Regular text with inline formatting
+    else if (trimmedLine) {
+      elements.push(
+        <Text key={key++} style={styles.regularText}>
+          {parseInlineFormatting(trimmedLine)}
+        </Text>
+      );
+    }
+    // Empty line
+    else {
+      elements.push(
+        <Text key={key++} style={styles.emptyLine}>
+          {' '}
+        </Text>
+      );
+    }
+  }
+
+  return elements;
+};
 
 export default function LoveAIChatScreen({ navigation }) {
+  const { user } = useAuth();
   const [messages, setMessages] = useState([
     {
       id: '1',
@@ -70,7 +170,8 @@ export default function LoveAIChatScreen({ navigation }) {
 
       const response = await OpenAIService.sendMessage(
         userMessage.content,
-        conversationHistory
+        conversationHistory,
+        user?.id
       );
 
       const assistantMessage = {
@@ -111,9 +212,15 @@ export default function LoveAIChatScreen({ navigation }) {
             isUser ? styles.userContent : styles.assistantContent,
           ]}
         >
-          <Text style={[styles.messageText, isUser && styles.userText]}>
-            {item.content}
-          </Text>
+          {isUser ? (
+            <Text style={[styles.messageText, styles.userText]}>
+              {item.content}
+            </Text>
+          ) : (
+            <View style={styles.formattedContent}>
+              {parseMarkdown(item.content)}
+            </View>
+          )}
           <Text style={styles.timestamp}>
             {item.timestamp.toLocaleTimeString('en-US', {
               hour: 'numeric',
@@ -265,6 +372,64 @@ const styles = StyleSheet.create({
   },
   userText: {
     color: 'white',
+  },
+  formattedContent: {
+    flex: 1,
+  },
+  header1: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  header2: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 6,
+    marginTop: 4,
+  },
+  header3: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+    marginTop: 4,
+  },
+  bulletPoint: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: '#333',
+    marginLeft: 8,
+    marginBottom: 2,
+  },
+  subBulletPoint: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: '#333',
+    marginLeft: 24,
+    marginBottom: 2,
+  },
+  numberedPoint: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: '#333',
+    marginLeft: 8,
+    marginBottom: 2,
+  },
+  boldText: {
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  regularText: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: '#333',
+    marginBottom: 2,
+  },
+  emptyLine: {
+    height: 8,
   },
   timestamp: {
     fontSize: 12,

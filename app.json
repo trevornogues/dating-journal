@@ -2,6 +2,7 @@
   "expo": {
     "name": "dating-journal",
     "slug": "dating-journal",
+    "privacy": "unlisted",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -12,17 +13,31 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.trevor.nogues.datingjournal",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.trevor.nogues.datingjournal"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "1d892811-c16c-496f-921e-1391bf5e2ba6"
+      }
+    },
+    "runtimeVersion": "expo",
+    "updates": {
+      "url": "https://u.expo.dev/1d892811-c16c-496f-921e-1391bf5e2ba6"
     }
   }
 }

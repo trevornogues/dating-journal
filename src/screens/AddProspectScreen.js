@@ -10,9 +10,11 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { StorageService } from '../utils/storage';
+import { FirestoreService } from '../services/firestoreService';
+import { useAuth } from '../utils/AuthContext';
 
 export default function AddProspectScreen({ navigation }) {
+  const { user } = useAuth();
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
   const [occupation, setOccupation] = useState('');
@@ -26,23 +28,28 @@ export default function AddProspectScreen({ navigation }) {
       return;
     }
 
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in to add a prospect');
+      return;
+    }
+
     const newProspect = {
-      id: Date.now().toString(),
       name: name.trim(),
       age: age.trim() ? parseInt(age) : null,
       occupation: occupation.trim(),
       interests: interests.trim(),
       notes: notes.trim(),
       whereWeMet: whereWeMet.trim(),
-      createdAt: new Date().toISOString(),
       inGraveyard: false,
     };
 
     try {
-      const prospects = await StorageService.getProspects();
-      prospects.push(newProspect);
-      await StorageService.saveProspects(prospects);
-      navigation.goBack();
+      const result = await FirestoreService.saveProspect(user.id, newProspect);
+      if (result.success) {
+        navigation.goBack();
+      } else {
+        Alert.alert('Error', result.error || 'Failed to save prospect');
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to save prospect');
     }

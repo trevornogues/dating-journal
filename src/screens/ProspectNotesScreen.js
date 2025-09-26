@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,11 +11,13 @@ import {
   Alert,
   RefreshControl,
 } from 'react-native';
-import { StorageService } from '../utils/storage';
+import { FirestoreService } from '../services/firestoreService';
+import { useAuth } from '../utils/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function ProspectNotesScreen({ route, navigation }) {
+  const { user } = useAuth();
   const { prospect } = route.params;
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState('');
@@ -23,17 +25,28 @@ export default function ProspectNotesScreen({ route, navigation }) {
   const [isAddingNote, setIsAddingNote] = useState(false);
 
   const loadNotes = async () => {
+    if (!user) return;
+    
     try {
-      const prospectNotes = await StorageService.getNotesForProspect(prospect.id);
-      // Sort by newest first
-      const sortedNotes = prospectNotes.sort((a, b) => 
-        new Date(b.createdAt) - new Date(a.createdAt)
-      );
-      setNotes(sortedNotes);
+      const result = await FirestoreService.getNotesForProspect(user.id, prospect.id);
+      if (result.success) {
+        setNotes(result.data);
+      }
     } catch (error) {
       console.error('Error loading notes:', error);
     }
   };
+
+  // Set up real-time listener for notes
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = FirestoreService.subscribeToNotes(user.id, prospect.id, (notesData) => {
+      setNotes(notesData);
+    });
+
+    return () => unsubscribe();
+  }, [user, prospect.id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -54,17 +67,27 @@ export default function ProspectNotesScreen({ route, navigation }) {
       return;
     }
 
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in to add a note');
+      return;
+    }
+
     try {
-      await StorageService.addNote(prospect.id, newNote.trim());
-      setNewNote('');
-      setIsAddingNote(false);
-      await loadNotes();
+      const result = await FirestoreService.addNote(user.id, prospect.id, newNote.trim());
+      if (result.success) {
+        setNewNote('');
+        setIsAddingNote(false);
+      } else {
+        Alert.alert('Error', result.error || 'Failed to add note');
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to add note');
     }
   };
 
   const handleDeleteNote = (noteId) => {
+    if (!user) return;
+    
     Alert.alert(
       'Delete Note',
       'Are you sure you want to delete this note?',
@@ -75,8 +98,10 @@ export default function ProspectNotesScreen({ route, navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              await StorageService.deleteNote(noteId);
-              await loadNotes();
+              const result = await FirestoreService.deleteNote(user.id, prospect.id, noteId);
+              if (!result.success) {
+                Alert.alert('Error', result.error || 'Failed to delete note');
+              }
             } catch (error) {
               Alert.alert('Error', 'Failed to delete note');
             }

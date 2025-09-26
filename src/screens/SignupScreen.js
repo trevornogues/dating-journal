@@ -25,9 +25,17 @@ export default function SignupScreen({ navigation }) {
       return;
     }
 
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters long');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      await signup(email, password, name);
+      const result = await signup(email, password, name);
+      if (!result.success) {
+        Alert.alert('Signup Failed', result.error);
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to create account. Please try again.');
     } finally {

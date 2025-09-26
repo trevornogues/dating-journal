@@ -8,7 +8,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useAuth } from '../utils/AuthContext';
-import { StorageService } from '../utils/storage';
+import { FirestoreService } from '../services/firestoreService';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -20,30 +20,34 @@ export default function DashboardScreen({ navigation }) {
   const [notesCount, setNotesCount] = useState({});
 
   const loadData = async () => {
+    if (!user) return;
+
     try {
-      const [loadedProspects, loadedDates, allNotes] = await Promise.all([
-        StorageService.getProspects(),
-        StorageService.getDates(),
-        StorageService.getNotes(),
+      const [prospectsResult, datesResult] = await Promise.all([
+        FirestoreService.getProspects(user.id),
+        FirestoreService.getDates(user.id),
       ]);
 
-      // Filter active prospects (not in graveyard)
+      // Prospects
+      const loadedProspects = prospectsResult.success ? prospectsResult.data : [];
       const activeProspects = loadedProspects.filter(p => !p.inGraveyard);
       setProspects(activeProspects);
 
-      // Count notes for each prospect
+      // Notes count per prospect (simple approach)
       const notesCounts = {};
-      activeProspects.forEach(prospect => {
-        notesCounts[prospect.id] = allNotes.filter(note => note.prospectId === prospect.id).length;
-      });
+      for (const p of activeProspects) {
+        const notesRes = await FirestoreService.getNotesForProspect(user.id, p.id);
+        notesCounts[p.id] = notesRes.success ? notesRes.data.length : 0;
+      }
       setNotesCount(notesCounts);
 
-      // Filter upcoming dates
+      // Upcoming dates
+      const loadedDates = datesResult.success ? datesResult.data : [];
       const now = new Date();
       const upcoming = loadedDates
-        .filter(date => new Date(date.dateTime) > now)
-        .sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime))
-        .slice(0, 5); // Show only next 5 upcoming dates
+        .filter(date => new Date(date.dateTime || date.date) > now)
+        .sort((a, b) => new Date(a.dateTime || a.date) - new Date(b.dateTime || b.date))
+        .slice(0, 5);
       setUpcomingDates(upcoming);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -53,7 +57,7 @@ export default function DashboardScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, [])
+    }, [user])
   );
 
   const onRefresh = async () => {
@@ -84,6 +88,13 @@ export default function DashboardScreen({ navigation }) {
       <View style={styles.header}>
         <Text style={styles.greeting}>Hello, {user?.name || 'there'}!</Text>
         <Text style={styles.subtitle}>Here's your dating overview</Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('UserProfile')}
+          style={styles.profileButton}
+        >
+          <Ionicons name="person" size={16} color="#FF6B6B" />
+          <Text style={styles.profileButtonText}>My Dating Goals</Text>
+        </TouchableOpacity>
       </View>
 
       {/* LoveAI Card */}
@@ -230,6 +241,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: 'rgba(255, 255, 255, 0.9)',
     marginTop: 5,
+  },
+  profileButton: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    backgroundColor: 'white',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  profileButtonText: {
+    color: '#FF6B6B',
+    fontWeight: '600',
+    marginLeft: 6,
   },
   loveAICard: {
     flexDirection: 'row',

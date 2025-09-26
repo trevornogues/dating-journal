@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { StorageService } from './storage';
+import { FirebaseAuthService } from '../services/firebaseAuth';
 
 const AuthContext = createContext({});
 
@@ -10,56 +10,46 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadUser();
+    // Listen to authentication state changes
+    const unsubscribe = FirebaseAuthService.onAuthStateChanged((user) => {
+      setUser(user);
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const loadUser = async () => {
-    try {
-      const userData = await StorageService.getUser();
-      if (userData) {
-        setUser(userData);
-      }
-    } catch (error) {
-      console.error('Error loading user:', error);
-    } finally {
-      setIsLoading(false);
+  const login = async (email, password) => {
+    const result = await FirebaseAuthService.login(email, password);
+    if (result.success) {
+      setUser(result.user);
+      return { success: true };
+    } else {
+      console.error('Login failed:', result.error);
+      return { success: false, error: result.error };
     }
   };
 
-  const login = async (email, password) => {
-    // In a real app, you would validate credentials with a backend
-    // For now, we'll create a mock user
-    const userData = {
-      id: Date.now().toString(),
-      email,
-      name: email.split('@')[0],
-      createdAt: new Date().toISOString(),
-    };
-
-    await StorageService.saveUser(userData);
-    setUser(userData);
-    return true;
-  };
-
   const signup = async (email, password, name) => {
-    // In a real app, you would create an account on the backend
-    // For now, we'll create a mock user
-    const userData = {
-      id: Date.now().toString(),
-      email,
-      name,
-      createdAt: new Date().toISOString(),
-    };
-
-    await StorageService.saveUser(userData);
-    setUser(userData);
-    return true;
+    const result = await FirebaseAuthService.signup(email, password, name);
+    if (result.success) {
+      setUser(result.user);
+      return { success: true };
+    } else {
+      console.error('Signup failed:', result.error);
+      return { success: false, error: result.error };
+    }
   };
 
   const logout = async () => {
-    await StorageService.removeUser();
-    await StorageService.clearAllData();
-    setUser(null);
+    const result = await FirebaseAuthService.logout();
+    if (result.success) {
+      setUser(null);
+      return true;
+    } else {
+      console.error('Logout failed:', result.error);
+      return false;
+    }
   };
 
   return (

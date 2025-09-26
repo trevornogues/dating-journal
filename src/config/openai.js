@@ -3,7 +3,7 @@ import { OPENAI_API_KEY } from '@env';
 
 export const OPENAI_CONFIG = {
   apiKey: OPENAI_API_KEY,
-  model: 'gpt-5-mini',
+  model: 'gpt-4o-mini',
   apiUrl: 'https://api.openai.com/v1/chat/completions',
 };
 
