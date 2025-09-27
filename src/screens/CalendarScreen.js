@@ -785,7 +785,12 @@ export default function CalendarScreen() {
             onPress={() => openEditDateModal(date)}
           >
             <View style={styles.dateInfo}>
-              <Text style={styles.datePerson}>{date.prospectName}</Text>
+              <View style={styles.datePersonContainer}>
+                <Text style={styles.datePerson}>{date.prospectName}</Text>
+                {date.deletedProspect && (
+                  <Text style={styles.deletedProspectLabel}> (Deleted Prospect)</Text>
+                )}
+              </View>
               <Text style={styles.dateTime}>{formatDateTime(date.dateTime || date.date)}</Text>
               {date.location && (
                 <Text style={styles.dateLocation}>📍 {date.location}</Text>
@@ -950,11 +955,21 @@ const styles = StyleSheet.create({
   dateInfo: {
     flex: 1,
   },
+  datePersonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   datePerson: {
     fontSize: 18,
     fontWeight: '700',
     color: '#2C3E50',
-    marginBottom: 8,
+  },
+  deletedProspectLabel: {
+    fontSize: 12,
+    color: '#999',
+    fontStyle: 'italic',
+    marginLeft: 4,
   },
   dateTime: {
     fontSize: 15,

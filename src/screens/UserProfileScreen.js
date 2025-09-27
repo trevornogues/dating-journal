@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -102,6 +102,12 @@ export default function UserProfileScreen({ navigation }) {
   const [currentSection, setCurrentSection] = useState('');
   const [newItem, setNewItem] = useState('');
   const [selectedSamples, setSelectedSamples] = useState([]);
+  
+  // Autosave functionality
+  const [autosaveStatus, setAutosaveStatus] = useState('saved'); // 'saved', 'saving', 'error'
+  const autosaveTimeoutRef = useRef(null);
+  const lastSaveTimeRef = useRef(null);
+  const isAutosavingRef = useRef(false);
 
   useEffect(() => {
     const load = async () => {
@@ -173,33 +179,116 @@ export default function UserProfileScreen({ navigation }) {
     if (!originalData) return false;
     
     const currentData = { values, lookingFor, boundaries, dealBreakers };
-    
     return JSON.stringify(currentData) !== JSON.stringify(originalData);
   };
 
-  const onSave = async () => {
+  const onSave = async (isAutosave = false) => {
     if (!user) return;
-    setIsSaving(true);
+    
+    if (isAutosave) {
+      isAutosavingRef.current = true;
+      setAutosaveStatus('saving');
+    } else {
+      setIsSaving(true);
+    }
+    
     const res = await FirestoreService.upsertUserProfile(user.id, {
       values,
       lookingFor,
       boundaries,
       dealBreakers
     });
-    setIsSaving(false);
+    
+    if (isAutosave) {
+      setAutosaveStatus(res.success ? 'saved' : 'error');
+      isAutosavingRef.current = false;
+    } else {
+      setIsSaving(false);
+    }
+    
     if (!res.success) {
-      Alert.alert('Error', res.error || 'Failed to save profile.');
+      if (!isAutosave) {
+        Alert.alert('Error', res.error || 'Failed to save profile.');
+      }
       return;
     }
+    
     // Update original data after successful save
     setOriginalData({ values, lookingFor, boundaries, dealBreakers });
-    Alert.alert('Saved', 'Your dating values have been updated.');
+    lastSaveTimeRef.current = new Date();
+    
+    if (!isAutosave) {
+      Alert.alert('Saved', 'Your dating values have been updated.');
+    }
   };
+
+  // Autosave function with debouncing
+  const triggerAutosave = useCallback(() => {
+    // Clear existing timeout
+    if (autosaveTimeoutRef.current) {
+      clearTimeout(autosaveTimeoutRef.current);
+    }
+    
+    // Capture current values at the time of triggering
+    const currentValues = { values, lookingFor, boundaries, dealBreakers };
+    
+    // Set new timeout for autosave
+    autosaveTimeoutRef.current = setTimeout(async () => {
+      if (!user) return;
+      
+      setAutosaveStatus('saving');
+      isAutosavingRef.current = true;
+      
+      const res = await FirestoreService.upsertUserProfile(user.id, currentValues);
+      
+      setAutosaveStatus(res.success ? 'saved' : 'error');
+      isAutosavingRef.current = false;
+      
+      if (res.success) {
+        setOriginalData(currentValues);
+        lastSaveTimeRef.current = new Date();
+      }
+    }, 2000); // 2 second delay
+  }, [values, lookingFor, boundaries, dealBreakers, user]);
+
+  // Effect to trigger autosave when data changes
+  useEffect(() => {
+    if (originalData && hasUnsavedChanges()) {
+      triggerAutosave();
+    }
+  }, [values, lookingFor, boundaries, dealBreakers, originalData, triggerAutosave]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (autosaveTimeoutRef.current) {
+        clearTimeout(autosaveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const addItem = (section, item) => {
     if (!item.trim()) return;
     
     const newItem = item.trim();
+    
+    // Check for duplicates
+    const getCurrentItems = () => {
+      switch (section) {
+        case 'values': return values;
+        case 'lookingFor': return lookingFor;
+        case 'boundaries': return boundaries;
+        case 'dealBreakers': return dealBreakers;
+        default: return [];
+      }
+    };
+    
+    const currentItems = getCurrentItems();
+    if (currentItems.includes(newItem)) {
+      Alert.alert('Duplicate Item', 'This item already exists in your list.');
+      return;
+    }
+    
     switch (section) {
       case 'values':
         if (values.length >= 10) {
@@ -275,10 +364,33 @@ export default function UserProfileScreen({ navigation }) {
     
     const currentItems = getCurrentItems();
     const availableSlots = 10 - currentItems.length;
-    const itemsToAdd = selectedSamples.slice(0, availableSlots);
     
-    if (itemsToAdd.length < selectedSamples.length) {
-      Alert.alert('Limit Reached', `You can only add ${availableSlots} more items. Some selections were not added.`);
+    // Filter out duplicates and items that would exceed the limit
+    const itemsToAdd = selectedSamples
+      .filter(item => !currentItems.includes(item))
+      .slice(0, availableSlots);
+    
+    const duplicatesFound = selectedSamples.filter(item => currentItems.includes(item));
+    const skippedDueToLimit = selectedSamples.length - itemsToAdd.length - duplicatesFound.length;
+    
+    // Show feedback about what happened
+    let message = '';
+    if (duplicatesFound.length > 0 && skippedDueToLimit > 0) {
+      message = `${duplicatesFound.length} items were already in your list and ${skippedDueToLimit} items were skipped due to the 10-item limit.`;
+    } else if (duplicatesFound.length > 0) {
+      message = `${duplicatesFound.length} items were already in your list.`;
+    } else if (skippedDueToLimit > 0) {
+      message = `${skippedDueToLimit} items were skipped due to the 10-item limit.`;
+    }
+    
+    if (message) {
+      Alert.alert('Some Items Skipped', message);
+    }
+    
+    if (itemsToAdd.length === 0) {
+      setShowSampleModal(false);
+      setSelectedSamples([]);
+      return;
     }
     
     switch (currentSection) {
@@ -379,8 +491,21 @@ export default function UserProfileScreen({ navigation }) {
         {renderBubbles(dealBreakers, 'dealBreakers')}
       </View>
 
-      <TouchableOpacity style={[styles.saveButton, isSaving && styles.saveButtonDisabled]} onPress={onSave} disabled={isSaving}>
-        <Text style={styles.saveButtonText}>{isSaving ? 'Saving...' : 'Save'}</Text>
+      <TouchableOpacity style={[styles.saveButton, isSaving && styles.saveButtonDisabled]} onPress={() => onSave(false)} disabled={isSaving}>
+        <View style={styles.saveButtonContent}>
+          <Text style={styles.saveButtonText}>{isSaving ? 'Saving...' : 'Save'}</Text>
+          {autosaveStatus === 'saved' && lastSaveTimeRef.current && (
+            <Text style={styles.autosaveText}>
+              Auto-saved {lastSaveTimeRef.current.toLocaleTimeString()}
+            </Text>
+          )}
+          {autosaveStatus === 'saving' && (
+            <Text style={styles.autosaveText}>Auto-saving...</Text>
+          )}
+          {autosaveStatus === 'error' && (
+            <Text style={styles.autosaveErrorText}>Auto-save failed - tap Save</Text>
+          )}
+        </View>
       </TouchableOpacity>
 
       <Modal
@@ -431,7 +556,7 @@ export default function UserProfileScreen({ navigation }) {
             <Text style={styles.modalTitle}>Choose Sample Items</Text>
             <Text style={styles.sampleSubtitle}>Select one or more items to add:</Text>
             <ScrollView style={styles.sampleList} showsVerticalScrollIndicator={false}>
-              {SAMPLE_BANK[currentSection]?.map((sample, index) => (
+              {SAMPLE_BANK[currentSection]?.filter(sample => !getCurrentItems().includes(sample)).map((sample, index) => (
                 <TouchableOpacity
                   key={index}
                   style={[
@@ -451,6 +576,13 @@ export default function UserProfileScreen({ navigation }) {
                   )}
                 </TouchableOpacity>
               ))}
+              {SAMPLE_BANK[currentSection]?.filter(sample => !getCurrentItems().includes(sample)).length === 0 && (
+                <View style={styles.emptySampleMessage}>
+                  <Text style={styles.emptySampleText}>
+                    All available sample items have already been added to your list.
+                  </Text>
+                </View>
+              )}
             </ScrollView>
             <View style={styles.modalButtons}>
               <TouchableOpacity 
@@ -584,10 +716,25 @@ const styles = StyleSheet.create({
   saveButtonDisabled: {
     opacity: 0.7
   },
+  saveButtonContent: {
+    alignItems: 'center'
+  },
   saveButtonText: {
     color: 'white',
     fontWeight: '700',
     fontSize: 16
+  },
+  autosaveText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 12,
+    marginTop: 4,
+    fontStyle: 'italic'
+  },
+  autosaveErrorText: {
+    color: '#FFE0E0',
+    fontSize: 12,
+    marginTop: 4,
+    fontStyle: 'italic'
   },
   modalOverlay: {
     flex: 1,
@@ -692,5 +839,18 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.5
+  },
+  emptySampleMessage: {
+    padding: 20,
+    alignItems: 'center',
+    backgroundColor: '#f8f8f8',
+    borderRadius: 8,
+    marginTop: 10
+  },
+  emptySampleText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    fontStyle: 'italic'
   }
 });

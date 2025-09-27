@@ -269,7 +269,6 @@ export class OpenAIService {
         {
           model: OPENAI_CONFIG.model,
           messages: messages,
-          temperature: 0.7,
           max_tokens: 1000,
         },
         {
@@ -305,37 +304,36 @@ export class OpenAIService {
       throw new Error('Please configure your OpenAI API key in src/config/openai.js');
     }
 
+    // Get prospects for intelligent RAG
+    const prospectsResult = await FirestoreService.getProspects(userId);
+    const prospects = prospectsResult.success ? prospectsResult.data : [];
+    const activeProspects = prospects.filter(p => !p.inGraveyard);
+    
+    // Detect if user is asking about a specific prospect
+    const specificProspectName = this.extractProspectName(userMessage, activeProspects);
+    
+    // Generate current dating context with RAG
+    const datingContext = await this.generateDatingContext(userId, specificProspectName);
+
+    // Build messages array
+    const messages = [
+      {
+        role: 'system',
+        content: SYSTEM_PROMPT,
+      },
+      {
+        role: 'system',
+        content: `Here is the user's current dating context:\n\n${datingContext}`,
+      },
+      ...conversationHistory,
+      {
+        role: 'user',
+        content: userMessage,
+      },
+    ];
+
     try {
-      // Get prospects for intelligent RAG
-      const prospectsResult = await FirestoreService.getProspects(userId);
-      const prospects = prospectsResult.success ? prospectsResult.data : [];
-      const activeProspects = prospects.filter(p => !p.inGraveyard);
-      
-      // Detect if user is asking about a specific prospect
-      const specificProspectName = this.extractProspectName(userMessage, activeProspects);
-      
-      // Generate current dating context with RAG
-      const datingContext = await this.generateDatingContext(userId, specificProspectName);
-
-      // Build messages array
-      const messages = [
-        {
-          role: 'system',
-          content: SYSTEM_PROMPT,
-        },
-        {
-          role: 'system',
-          content: `Here is the user's current dating context:\n\n${datingContext}`,
-        },
-        ...conversationHistory,
-        {
-          role: 'user',
-          content: userMessage,
-        },
-      ];
-
-      // For React Native, we'll simulate streaming by making a regular request
-      // and then streaming the response character by character
+      // React Native can't stream, so we'll get the full response and simulate streaming
       const response = await fetch(OPENAI_CONFIG.apiUrl, {
         method: 'POST',
         headers: {
@@ -345,9 +343,8 @@ export class OpenAIService {
         body: JSON.stringify({
           model: OPENAI_CONFIG.model,
           messages: messages,
-          temperature: 0.7,
           max_tokens: 1000,
-          stream: false, // Use regular request for React Native compatibility
+          stream: false, // Get full response instead of streaming
         }),
       });
 
@@ -359,20 +356,15 @@ export class OpenAIService {
 
       const data = await response.json();
       const fullResponse = data.choices?.[0]?.message?.content || '';
-      
-      // Simulate streaming by sending chunks of the response
+
+      // Fake streaming: send chunked words
       const words = fullResponse.split(' ');
-      let currentText = '';
-      
       for (let i = 0; i < words.length; i++) {
-        currentText += (i > 0 ? ' ' : '') + words[i];
         onChunk(i > 0 ? ' ' + words[i] : words[i]);
-        
-        // Add a small delay to simulate streaming
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(r => setTimeout(r, 30));
       }
     } catch (error) {
-      console.error('OpenAI Streaming Error:', error);
+      console.error('OpenAI API Error:', error);
       
       if (error.message.includes('401')) {
         throw new Error('Invalid API key. Please check your OpenAI API key.');

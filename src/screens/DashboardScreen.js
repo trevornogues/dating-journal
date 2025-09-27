@@ -706,7 +706,12 @@ export default function DashboardScreen({ navigation }) {
               onPress={() => navigation.navigate('Calendar')}
             >
               <View style={styles.dateInfo}>
-                <Text style={styles.datePerson}>{date.prospectName}</Text>
+                <View style={styles.datePersonContainer}>
+                  <Text style={styles.datePerson}>{date.prospectName}</Text>
+                  {date.deletedProspect && (
+                    <Text style={styles.deletedProspectLabel}> (Deleted Prospect)</Text>
+                  )}
+                </View>
                 <Text style={styles.dateTime}>{formatDate(date.dateTime)}</Text>
                 {date.location && (
                   <Text style={styles.dateLocation}>{date.location}</Text>
@@ -716,7 +721,7 @@ export default function DashboardScreen({ navigation }) {
                     <Text style={styles.notesLabel}>Post-date: </Text>{date.postDateNotes}
                   </Text>
                 )}
-                {!date.postDateNotes && (
+                {!date.postDateNotes && !date.deletedProspect && (
                   <TouchableOpacity
                     style={styles.reflectionButton}
                     onPress={() => navigation.navigate('Calendar')}
@@ -994,11 +999,21 @@ const styles = StyleSheet.create({
   dateInfo: {
     flex: 1,
   },
+  datePersonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
   datePerson: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 5,
+  },
+  deletedProspectLabel: {
+    fontSize: 12,
+    color: '#999',
+    fontStyle: 'italic',
+    marginLeft: 4,
   },
   dateTime: {
     fontSize: 14,

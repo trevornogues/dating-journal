@@ -54,6 +54,11 @@ export const FirestoreService = {
   // Prospects management
   async checkProspectNameUnique(userId, prospectName, excludeId = null) {
     try {
+      // Validate input
+      if (!prospectName || typeof prospectName !== 'string') {
+        return { success: false, error: 'Invalid prospect name' };
+      }
+
       const prospectsRef = collection(db, 'users', userId, 'prospects');
       const snapshot = await getDocs(prospectsRef);
       
@@ -61,14 +66,16 @@ export const FirestoreService = {
       snapshot.forEach(doc => {
         const data = doc.data();
         if (excludeId && doc.id === excludeId) return; // Skip the prospect being edited
-        existingProspects.push({ id: doc.id, name: data.name });
+        if (data.name && typeof data.name === 'string') {
+          existingProspects.push({ id: doc.id, name: data.name });
+        }
       });
       
       const isUnique = !existingProspects.some(prospect => 
-        prospect.name.toLowerCase().trim() === prospectName.toLowerCase().trim()
+        prospect.name && prospect.name.toLowerCase().trim() === prospectName.toLowerCase().trim()
       );
       
-      return { success: true, isUnique, existingNames: existingProspects.map(p => p.name) };
+      return { success: true, isUnique, existingNames: existingProspects.map(p => p.name).filter(name => name) };
     } catch (error) {
       console.error('Error checking prospect name uniqueness:', error);
       return { success: false, error: error.message };
@@ -106,18 +113,20 @@ export const FirestoreService = {
 
   async updateProspect(userId, prospectId, prospectData) {
     try {
-      // Check if prospect name is unique (excluding current prospect)
-      const nameCheck = await this.checkProspectNameUnique(userId, prospectData.name, prospectId);
-      if (!nameCheck.success) {
-        return { success: false, error: nameCheck.error };
-      }
-      
-      if (!nameCheck.isUnique) {
-        return { 
-          success: false, 
-          error: 'NAME_EXISTS',
-          existingNames: nameCheck.existingNames 
-        };
+      // Only check name uniqueness if the name is being changed
+      if (prospectData.name) {
+        const nameCheck = await this.checkProspectNameUnique(userId, prospectData.name, prospectId);
+        if (!nameCheck.success) {
+          return { success: false, error: nameCheck.error };
+        }
+        
+        if (!nameCheck.isUnique) {
+          return { 
+            success: false, 
+            error: 'NAME_EXISTS',
+            existingNames: nameCheck.existingNames 
+          };
+        }
       }
 
       const prospectRef = doc(db, 'users', userId, 'prospects', prospectId);
@@ -132,8 +141,9 @@ export const FirestoreService = {
     }
   },
 
-  async deleteProspect(userId, prospectId) {
+  async deleteProspect(userId, prospectId, prospectData = null) {
     try {
+      // Delete the prospect document
       const prospectRef = doc(db, 'users', userId, 'prospects', prospectId);
       await deleteDoc(prospectRef);
       return { success: true };
@@ -307,6 +317,86 @@ export const FirestoreService = {
       return { success: true };
     } catch (error) {
       console.error('Error deleting date:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  async deleteDatesForProspect(userId, prospectName) {
+    try {
+      const datesRef = collection(db, 'users', userId, 'dates');
+      const q = query(datesRef, where('prospectName', '==', prospectName));
+      const querySnapshot = await getDocs(q);
+      
+      const deletePromises = [];
+      querySnapshot.forEach((doc) => {
+        deletePromises.push(deleteDoc(doc.ref));
+      });
+      
+      await Promise.all(deletePromises);
+      return { success: true, deletedCount: deletePromises.length };
+    } catch (error) {
+      console.error('Error deleting dates for prospect:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  async deleteUpcomingDatesForProspect(userId, prospectName) {
+    try {
+      const datesRef = collection(db, 'users', userId, 'dates');
+      const q = query(datesRef, where('prospectName', '==', prospectName));
+      const querySnapshot = await getDocs(q);
+      
+      const now = new Date();
+      const deletePromises = [];
+      let deletedCount = 0;
+      
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        const dateTime = new Date(data.dateTime || data.date);
+        
+        // Only delete upcoming dates (future dates)
+        if (dateTime > now) {
+          deletePromises.push(deleteDoc(doc.ref));
+          deletedCount++;
+        }
+      });
+      
+      await Promise.all(deletePromises);
+      return { success: true, deletedCount };
+    } catch (error) {
+      console.error('Error deleting upcoming dates for prospect:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  async markPastDatesAsDeletedProspect(userId, prospectName) {
+    try {
+      const datesRef = collection(db, 'users', userId, 'dates');
+      const q = query(datesRef, where('prospectName', '==', prospectName));
+      const querySnapshot = await getDocs(q);
+      
+      const now = new Date();
+      const updatePromises = [];
+      let markedCount = 0;
+      
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        const dateTime = new Date(data.dateTime || data.date);
+        
+        // Only mark past dates (not future dates)
+        if (dateTime <= now) {
+          updatePromises.push(updateDoc(doc.ref, {
+            deletedProspect: true,
+            updatedAt: serverTimestamp()
+          }));
+          markedCount++;
+        }
+      });
+      
+      await Promise.all(updatePromises);
+      return { success: true, markedCount };
+    } catch (error) {
+      console.error('Error marking past dates as deleted prospect:', error);
       return { success: false, error: error.message };
     }
   },

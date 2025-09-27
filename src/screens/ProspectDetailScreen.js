@@ -132,6 +132,13 @@ export default function ProspectDetailScreen({ route, navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
+              // First, delete upcoming dates for this prospect
+              const deleteDatesResult = await FirestoreService.deleteUpcomingDatesForProspect(user.id, prospect.name);
+              if (!deleteDatesResult.success) {
+                console.warn('Failed to delete upcoming dates:', deleteDatesResult.error);
+              }
+
+              // Then move prospect to graveyard
               const result = await FirestoreService.updateProspect(user.id, prospect.id, { inGraveyard: true });
               if (result.success) {
                 navigation.goBack();
@@ -186,17 +193,65 @@ export default function ProspectDetailScreen({ route, navigation }) {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              const result = await FirestoreService.deleteProspect(user.id, prospect.id, prospect);
-              if (result.success) {
-                navigation.goBack();
-              } else {
-                Alert.alert('Error', result.error || 'Failed to delete prospect');
-              }
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete prospect');
-            }
+          onPress: () => {
+            // Ask about keeping past dates
+            Alert.alert(
+              'Keep Past Dates?',
+              'Would you like to keep past dates for reference, or delete all dates associated with this prospect?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Keep Past Dates',
+                  style: 'default',
+                  onPress: async () => {
+                    try {
+                      // Delete upcoming dates and mark past dates as deleted prospect
+                      const deleteDatesResult = await FirestoreService.deleteUpcomingDatesForProspect(user.id, prospect.name);
+                      if (!deleteDatesResult.success) {
+                        console.warn('Failed to delete upcoming dates:', deleteDatesResult.error);
+                      }
+                      
+                      // Mark past dates as belonging to a deleted prospect
+                      const markDatesResult = await FirestoreService.markPastDatesAsDeletedProspect(user.id, prospect.name);
+                      if (!markDatesResult.success) {
+                        console.warn('Failed to mark past dates:', markDatesResult.error);
+                      }
+                      
+                      const result = await FirestoreService.deleteProspect(user.id, prospect.id, prospect);
+                      if (result.success) {
+                        navigation.goBack();
+                      } else {
+                        Alert.alert('Error', result.error || 'Failed to delete prospect');
+                      }
+                    } catch (error) {
+                      Alert.alert('Error', 'Failed to delete prospect');
+                    }
+                  },
+                },
+                {
+                  text: 'Delete All Dates',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      // Delete all dates (past and future)
+                      const deleteDatesResult = await FirestoreService.deleteDatesForProspect(user.id, prospect.name);
+                      if (!deleteDatesResult.success) {
+                        console.warn('Failed to delete dates:', deleteDatesResult.error);
+                      }
+                      
+                      const result = await FirestoreService.deleteProspect(user.id, prospect.id, prospect);
+                      if (result.success) {
+                        navigation.goBack();
+                      } else {
+                        Alert.alert('Error', result.error || 'Failed to delete prospect');
+                      }
+                    } catch (error) {
+                      Alert.alert('Error', 'Failed to delete prospect');
+                    }
+                  },
+                },
+              ]
+            );
           },
         },
       ]
