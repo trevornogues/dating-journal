@@ -23,6 +23,8 @@ export default function ProspectNotesScreen({ route, navigation }) {
   const [newNote, setNewNote] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [isAddingNote, setIsAddingNote] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [editingNoteContent, setEditingNoteContent] = useState('');
 
   const loadNotes = async () => {
     if (!user) return;
@@ -85,6 +87,40 @@ export default function ProspectNotesScreen({ route, navigation }) {
     }
   };
 
+  const handleEditNote = (note) => {
+    setEditingNoteId(note.id);
+    setEditingNoteContent(note.content);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingNoteContent.trim()) {
+      Alert.alert('Error', 'Please enter a note');
+      return;
+    }
+
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in to edit a note');
+      return;
+    }
+
+    try {
+      const result = await FirestoreService.updateNote(user.id, prospect.id, editingNoteId, editingNoteContent.trim());
+      if (result.success) {
+        setEditingNoteId(null);
+        setEditingNoteContent('');
+      } else {
+        Alert.alert('Error', result.error || 'Failed to update note');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update note');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingNoteId(null);
+    setEditingNoteContent('');
+  };
+
   const handleDeleteNote = (noteId) => {
     if (!user) return;
     
@@ -135,17 +171,59 @@ export default function ProspectNotesScreen({ route, navigation }) {
     }
   };
 
-  const renderNote = ({ item }) => (
-    <View style={styles.noteCard}>
-      <View style={styles.noteHeader}>
-        <Text style={styles.noteDate}>{formatDate(item.createdAt)}</Text>
-        <TouchableOpacity onPress={() => handleDeleteNote(item.id)}>
-          <Ionicons name="trash-outline" size={20} color="#FF6B6B" />
-        </TouchableOpacity>
+  const renderNote = ({ item }) => {
+    const isEditing = editingNoteId === item.id;
+    
+    return (
+      <View style={styles.noteCard}>
+        <View style={styles.noteHeader}>
+          <Text style={styles.noteDate}>{formatDate(item.createdAt)}</Text>
+          <View style={styles.noteActions}>
+            {!isEditing ? (
+              <>
+                <TouchableOpacity 
+                  onPress={() => handleEditNote(item)}
+                  style={styles.editButton}
+                >
+                  <Ionicons name="create-outline" size={20} color="#FF6B6B" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleDeleteNote(item.id)}>
+                  <Ionicons name="trash-outline" size={20} color="#FF6B6B" />
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity 
+                  onPress={handleSaveEdit}
+                  style={styles.saveButton}
+                >
+                  <Ionicons name="checkmark" size={20} color="#28a745" />
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  onPress={handleCancelEdit}
+                  style={styles.cancelButton}
+                >
+                  <Ionicons name="close" size={20} color="#666" />
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+        {isEditing ? (
+          <TextInput
+            style={styles.noteEditInput}
+            value={editingNoteContent}
+            onChangeText={setEditingNoteContent}
+            multiline
+            autoFocus
+            placeholder="Edit your note..."
+          />
+        ) : (
+          <Text style={styles.noteContent}>{item.content}</Text>
+        )}
       </View>
-      <Text style={styles.noteContent}>{item.content}</Text>
-    </View>
-  );
+    );
+  };
 
   const renderHeader = () => (
     <View style={styles.header}>
@@ -309,6 +387,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
     lineHeight: 22,
+  },
+  noteActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editButton: {
+    padding: 4,
+  },
+  saveButton: {
+    padding: 4,
+  },
+  cancelButton: {
+    padding: 4,
+  },
+  noteEditInput: {
+    fontSize: 16,
+    color: '#333',
+    lineHeight: 22,
+    borderWidth: 1,
+    borderColor: '#FF6B6B',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#fff5f5',
+    minHeight: 60,
+    textAlignVertical: 'top',
   },
   emptyState: {
     flex: 1,

@@ -41,6 +41,10 @@
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0,
       "url": "https://u.expo.dev/1d892811-c16c-496f-921e-1391bf5e2ba6"
-    }
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-font"
+    ]
   }
 }

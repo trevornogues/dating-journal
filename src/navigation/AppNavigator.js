@@ -13,6 +13,7 @@ import DashboardScreen from '../screens/DashboardScreen';
 import ProspectsScreen from '../screens/ProspectsScreen';
 import AddProspectScreen from '../screens/AddProspectScreen';
 import ProspectDetailScreen from '../screens/ProspectDetailScreen';
+import ProspectDateHistoryScreen from '../screens/ProspectDateHistoryScreen';
 import ProspectNotesScreen from '../screens/ProspectNotesScreen';
 import CalendarScreen from '../screens/CalendarScreen';
 import LoveAIChatScreen from '../screens/LoveAIChatScreen';
@@ -62,6 +63,7 @@ const ProspectsStack = () => (
     <Stack.Screen name="ProspectsList" component={ProspectsScreen} options={{ title: 'Prospects' }} />
     <Stack.Screen name="AddProspect" component={AddProspectScreen} options={{ title: 'Add Prospect', headerBackTitle: 'Back' }} />
     <Stack.Screen name="ProspectDetail" component={ProspectDetailScreen} options={{ title: 'Prospect Details', headerBackTitle: 'Back' }} />
+    <Stack.Screen name="ProspectDateHistory" component={ProspectDateHistoryScreen} options={{ title: 'Date History', headerBackTitle: 'Back' }} />
     <Stack.Screen name="ProspectNotes" component={ProspectNotesScreen} options={{ title: 'Timeline Notes', headerBackTitle: 'Back' }} />
   </Stack.Navigator>
 );

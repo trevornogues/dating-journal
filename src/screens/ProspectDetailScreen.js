@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -19,13 +19,25 @@ export default function ProspectDetailScreen({ route, navigation }) {
   const { user } = useAuth();
   const { prospect: initialProspect } = route.params;
   const [prospect, setProspect] = useState(initialProspect);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedProspect, setEditedProspect] = useState(initialProspect);
+  const [isSaving, setIsSaving] = useState(false);
   const [notesCount, setNotesCount] = useState(0);
+  const [datesCount, setDatesCount] = useState(0);
+  const [prospectDates, setProspectDates] = useState([]);
+  const saveTimeoutRef = useRef(null);
 
 
   useEffect(() => {
     loadNotesCount();
+    loadProspectDates();
+  }, []);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
   }, []);
 
   const loadNotesCount = async () => {
@@ -37,29 +49,75 @@ export default function ProspectDetailScreen({ route, navigation }) {
     }
   };
 
-  const handleSave = async () => {
+  const loadProspectDates = async () => {
     if (!user) return;
     
     try {
-      const result = await FirestoreService.updateProspect(user.id, prospect.id, editedProspect);
+      const result = await FirestoreService.getDates(user.id);
       if (result.success) {
-        setProspect(editedProspect);
-        setIsEditing(false);
+        // Filter dates for this specific prospect
+        const prospectDatesList = result.data.filter(date => 
+          date.prospectName && date.prospectName.toLowerCase() === prospect.name.toLowerCase()
+        );
+        
+        // Sort by date (most recent first)
+        const sortedDates = prospectDatesList.sort((a, b) => {
+          const dateA = new Date(a.dateTime || a.date);
+          const dateB = new Date(b.dateTime || b.date);
+          return dateB - dateA;
+        });
+        
+        setProspectDates(sortedDates);
+        setDatesCount(sortedDates.length);
+      }
+    } catch (error) {
+      console.error('Error loading prospect dates:', error);
+    }
+  };
+
+  const autoSave = useCallback(async (updatedProspect) => {
+    if (!user || isSaving) return;
+    
+    setIsSaving(true);
+    try {
+      const result = await FirestoreService.updateProspect(user.id, prospect.id, updatedProspect);
+      if (result.success) {
+        setProspect(updatedProspect);
       } else {
         if (result.error === 'NAME_EXISTS') {
           Alert.alert(
             'Name Already Exists',
-            `You already have a prospect named "${editedProspect.name}". Please choose a different name.`,
+            `You already have a prospect named "${updatedProspect.name}". Please choose a different name.`,
             [{ text: 'OK' }]
           );
+          // Revert the name change
+          setProspect(prospect);
         } else {
           Alert.alert('Error', result.error || 'Failed to save changes');
         }
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to save changes');
+    } finally {
+      setIsSaving(false);
     }
-  };
+  }, [user, prospect.id, isSaving]);
+
+  const handleFieldChange = useCallback((field, value) => {
+    // Update state immediately for responsive UI
+    setProspect(prev => ({ ...prev, [field]: value }));
+    
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    // Set new timeout for auto-save (debounced)
+    saveTimeoutRef.current = setTimeout(() => {
+      const updatedProspect = { ...prospect, [field]: value };
+      autoSave(updatedProspect);
+    }, 1500); // 1.5 seconds delay
+  }, [prospect, autoSave]);
 
   const handleMoveToGraveyard = () => {
     if (!user) return;
@@ -230,17 +288,12 @@ export default function ProspectDetailScreen({ route, navigation }) {
             <Ionicons name="camera" size={16} color="white" />
           </View>
         </TouchableOpacity>
-        {isEditing ? (
-          <TextInput
-            style={styles.nameInput}
-            value={editedProspect.name}
-            onChangeText={(text) =>
-              setEditedProspect({ ...editedProspect, name: text })
-            }
-          />
-        ) : (
-          <Text style={styles.name}>{prospect.name}</Text>
-        )}
+        <TextInput
+          style={styles.nameInput}
+          value={prospect.name}
+          onChangeText={(text) => handleFieldChange('name', text)}
+          placeholder="Enter name"
+        />
       </View>
 
       {/* Notes Button */}
@@ -261,57 +314,33 @@ export default function ProspectDetailScreen({ route, navigation }) {
       <View style={styles.infoSection}>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Age</Text>
-          {isEditing ? (
-            <TextInput
-              style={styles.infoInput}
-              value={editedProspect.age?.toString() || ''}
-              onChangeText={(text) =>
-                setEditedProspect({
-                  ...editedProspect,
-                  age: text ? parseInt(text) : null,
-                })
-              }
-              keyboardType="numeric"
-            />
-          ) : (
-            <Text style={styles.infoValue}>
-              {prospect.age ? `${prospect.age} years` : 'Not set'}
-            </Text>
-          )}
+          <TextInput
+            style={styles.infoInput}
+            value={prospect.age?.toString() || ''}
+            onChangeText={(text) => handleFieldChange('age', text ? parseInt(text) : null)}
+            keyboardType="numeric"
+            placeholder="Enter age"
+          />
         </View>
 
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Occupation</Text>
-          {isEditing ? (
-            <TextInput
-              style={styles.infoInput}
-              value={editedProspect.occupation || ''}
-              onChangeText={(text) =>
-                setEditedProspect({ ...editedProspect, occupation: text })
-              }
-            />
-          ) : (
-            <Text style={styles.infoValue}>
-              {prospect.occupation || 'Not set'}
-            </Text>
-          )}
+          <TextInput
+            style={styles.infoInput}
+            value={prospect.occupation || ''}
+            onChangeText={(text) => handleFieldChange('occupation', text)}
+            placeholder="Enter occupation"
+          />
         </View>
 
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Where We Met</Text>
-          {isEditing ? (
-            <TextInput
-              style={styles.infoInput}
-              value={editedProspect.whereWeMet || ''}
-              onChangeText={(text) =>
-                setEditedProspect({ ...editedProspect, whereWeMet: text })
-              }
-            />
-          ) : (
-            <Text style={styles.infoValue}>
-              {prospect.whereWeMet || 'Not set'}
-            </Text>
-          )}
+          <TextInput
+            style={styles.infoInput}
+            value={prospect.whereWeMet || ''}
+            onChangeText={(text) => handleFieldChange('whereWeMet', text)}
+            placeholder="Where did you meet?"
+          />
         </View>
 
         <View style={styles.infoRow}>
@@ -320,94 +349,87 @@ export default function ProspectDetailScreen({ route, navigation }) {
         </View>
       </View>
 
+      {/* Date History Section */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Date History</Text>
+          <Text style={styles.sectionSubtitle}>{datesCount} {datesCount === 1 ? 'date' : 'dates'}</Text>
+        </View>
+        
+        {datesCount > 0 ? (
+          <TouchableOpacity
+            style={styles.dateHistoryButton}
+            onPress={() => navigation.navigate('ProspectDateHistory', { 
+              prospect: prospect,
+              dates: prospectDates 
+            })}
+          >
+            <View style={styles.dateHistoryButtonContent}>
+              <View style={styles.dateHistoryButtonLeft}>
+                <Ionicons name="calendar" size={24} color="#FF6B6B" />
+                <View style={styles.dateHistoryButtonText}>
+                  <Text style={styles.dateHistoryButtonTitle}>View All Dates</Text>
+                  <Text style={styles.dateHistoryButtonSubtitle}>
+                    {datesCount} {datesCount === 1 ? 'date' : 'dates'} with {prospect.name}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#FF6B6B" />
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.emptyDateHistory}>
+            <Ionicons name="calendar-outline" size={48} color="#ccc" />
+            <Text style={styles.emptyDateHistoryText}>No dates yet</Text>
+            <Text style={styles.emptyDateHistorySubtext}>
+              Start planning your first date with {prospect.name}
+            </Text>
+          </View>
+        )}
+      </View>
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Interests</Text>
-        {isEditing ? (
-          <TextInput
-            style={styles.textArea}
-            value={editedProspect.interests || ''}
-            onChangeText={(text) =>
-              setEditedProspect({ ...editedProspect, interests: text })
-            }
-            multiline
-            numberOfLines={3}
-            placeholder="Add interests..."
-          />
-        ) : (
-          <Text style={styles.sectionContent}>
-            {prospect.interests || 'No interests added yet'}
-          </Text>
-        )}
+        <TextInput
+          style={styles.textArea}
+          value={prospect.interests || ''}
+          onChangeText={(text) => handleFieldChange('interests', text)}
+          multiline
+          numberOfLines={3}
+        />
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notes</Text>
-        {isEditing ? (
-          <TextInput
-            style={styles.textArea}
-            value={editedProspect.notes || ''}
-            onChangeText={(text) =>
-              setEditedProspect({ ...editedProspect, notes: text })
-            }
-            multiline
-            numberOfLines={5}
-            placeholder="Add notes..."
-          />
-        ) : (
-          <Text style={styles.sectionContent}>
-            {prospect.notes || 'No notes added yet'}
-          </Text>
-        )}
+        <Text style={styles.sectionTitle}>General Notes</Text>
+        <TextInput
+          style={styles.textArea}
+          value={prospect.notes || ''}
+          onChangeText={(text) => handleFieldChange('notes', text)}
+          multiline
+          numberOfLines={5}
+        />
       </View>
 
-      {/* Edit Button - Fallback if header button doesn't work */}
-      {!isEditing && (
+      {/* Action Buttons */}
+      {prospect.inGraveyard ? (
         <TouchableOpacity
-          style={styles.editButton}
-          onPress={() => setIsEditing(true)}
+          style={styles.activeButton}
+          onPress={handleMoveToActive}
         >
-          <Text style={styles.editButtonText}>✏️ Edit Prospect</Text>
+          <Text style={styles.activeButtonText}>Move to Active</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity
+          style={styles.graveyardButton}
+          onPress={handleMoveToGraveyard}
+        >
+          <Text style={styles.graveyardButtonText}>🪦 Move to Graveyard</Text>
         </TouchableOpacity>
       )}
 
-      {isEditing ? (
-        <>
-          <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-            <Text style={styles.saveButtonText}>Save Changes</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.cancelButton} 
-            onPress={() => {
-              setIsEditing(false);
-              setEditedProspect(prospect); // Reset to original values
-            }}
-          >
-            <Text style={styles.cancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
-        </>
-      ) : (
-        <>
-          {prospect.inGraveyard ? (
-            <TouchableOpacity
-              style={styles.activeButton}
-              onPress={handleMoveToActive}
-            >
-              <Text style={styles.activeButtonText}>Move to Active</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.graveyardButton}
-              onPress={handleMoveToGraveyard}
-            >
-              <Text style={styles.graveyardButtonText}>🪦 Move to Graveyard</Text>
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-            <Text style={styles.deleteButtonText}>🗑️ Delete Prospect</Text>
-          </TouchableOpacity>
-        </>
-      )}
+      <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+        <Text style={styles.deleteButtonText}>🗑️ Delete Prospect</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -468,34 +490,6 @@ const styles = StyleSheet.create({
     borderBottomColor: '#FF6B6B',
     paddingHorizontal: 10,
     paddingVertical: 5,
-  },
-  editButton: {
-    backgroundColor: '#FF6B6B',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderRadius: 10,
-    marginBottom: 10,
-    marginHorizontal: 40,
-    alignItems: 'center',
-    alignSelf: 'center',
-  },
-  editButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  cancelButton: {
-    backgroundColor: '#F8F9FA',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderRadius: 10,
-    marginTop: 10,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    color: '#6C757D',
-    fontSize: 16,
-    fontWeight: '700',
   },
   notesButton: {
     flexDirection: 'row',
@@ -579,18 +573,6 @@ const styles = StyleSheet.create({
     minHeight: 80,
     textAlignVertical: 'top',
   },
-  saveButton: {
-    backgroundColor: '#FF6B6B',
-    margin: 20,
-    paddingVertical: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  saveButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '600',
-  },
   graveyardButton: {
     backgroundColor: '#FFA500',
     margin: 20,
@@ -629,5 +611,63 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 18,
     fontWeight: '600',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  dateHistoryButton: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  dateHistoryButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dateHistoryButtonLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  dateHistoryButtonText: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  dateHistoryButtonTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 2,
+  },
+  dateHistoryButtonSubtitle: {
+    fontSize: 14,
+    color: '#666',
+  },
+  emptyDateHistory: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyDateHistoryText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptyDateHistorySubtext: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
   },
 }); 

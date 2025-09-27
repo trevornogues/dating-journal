@@ -11,6 +11,9 @@ import {
   Alert,
   Platform,
   Image,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 // import RNPickerSelect from 'react-native-picker-select';
@@ -34,9 +37,11 @@ export default function CalendarScreen() {
   const [prospectName, setProspectName] = useState('');
   const [selectedProspect, setSelectedProspect] = useState(null);
   const [location, setLocation] = useState('');
-  const [notes, setNotes] = useState('');
+  const [preDateNotes, setPreDateNotes] = useState('');
+  const [postDateNotes, setPostDateNotes] = useState('');
   const [dateTime, setDateTime] = useState(new Date());
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [showProspectPicker, setShowProspectPicker] = useState(false);
   const [loadingProspects, setLoadingProspects] = useState(false);
   const [addDateStep, setAddDateStep] = useState('prospect_choice'); // 'prospect_choice', 'existing_prospect', 'new_prospect', 'date_details'
@@ -77,7 +82,12 @@ export default function CalendarScreen() {
       // Handle both dateTime and date fields
       const dateField = date.dateTime || date.date;
       if (dateField) {
-        const dateStr = dateField.split('T')[0];
+        // Use the same date processing logic as getDatesForSelectedDay
+        const dateObj = new Date(dateField);
+        const dateStr = dateObj.getFullYear() + '-' + 
+                       String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + 
+                       String(dateObj.getDate()).padStart(2, '0');
+        
         marked[dateStr] = {
           marked: true,
           dotColor: '#FF6B6B',
@@ -102,8 +112,11 @@ export default function CalendarScreen() {
     setSelectedProspect(null);
     setSelectedProspectForDate(null);
     setLocation('');
-    setNotes('');
+    setPreDateNotes('');
+    setPostDateNotes('');
     setDateTime(new Date(date + 'T19:00:00'));
+    setShowDatePicker(false);
+    setShowTimePicker(false);
     setAddDateStep('prospect_choice');
     setModalVisible(true);
   };
@@ -113,8 +126,11 @@ export default function CalendarScreen() {
     setProspectName(dateItem.prospectName);
     setSelectedProspect(dateItem.prospectName);
     setLocation(dateItem.location || '');
-    setNotes(dateItem.notes || '');
+    setPreDateNotes(dateItem.preDateNotes || '');
+    setPostDateNotes(dateItem.postDateNotes || '');
     setDateTime(new Date(dateItem.dateTime));
+    setShowDatePicker(false);
+    setShowTimePicker(false);
     setModalVisible(true);
   };
 
@@ -132,7 +148,8 @@ export default function CalendarScreen() {
     const dateObj = {
       prospectName: prospectName.trim(),
       location: location.trim(),
-      notes: notes.trim(),
+      preDateNotes: preDateNotes.trim(),
+      postDateNotes: postDateNotes.trim(),
       dateTime: dateTime.toISOString(),
     };
 
@@ -146,6 +163,8 @@ export default function CalendarScreen() {
       
       if (result.success) {
         setModalVisible(false);
+        setShowDatePicker(false);
+        setShowTimePicker(false);
         loadData(); // Reload data to get updated list
       } else {
         Alert.alert('Error', result.error || 'Failed to save date');
@@ -447,35 +466,85 @@ export default function CalendarScreen() {
       </Text>
       
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Time</Text>
-        <TouchableOpacity
-          style={styles.timeButton}
-          onPress={() => setShowTimePicker(true)}
-        >
-          <Text style={styles.timeButtonText}>
-            {dateTime.toLocaleTimeString('en-US', {
-              hour: 'numeric',
-              minute: '2-digit',
-            })}
-          </Text>
-        </TouchableOpacity>
+        <Text style={styles.label}>Date & Time</Text>
+        <View style={styles.dateTimeRow}>
+          <TouchableOpacity
+            style={styles.dateTimeButton}
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Text style={styles.dateTimeButtonText}>
+              {dateTime.toLocaleDateString()}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.dateTimeButton}
+            onPress={() => setShowTimePicker(true)}
+          >
+            <Text style={styles.dateTimeButtonText}>
+              {dateTime.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+              })}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
+      {showDatePicker && (
+        <View style={styles.timePickerContainer}>
+          <DateTimePicker
+            value={dateTime}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={(event, selected) => {
+              setShowDatePicker(Platform.OS !== 'ios');
+              if (selected) {
+                const newDateTime = new Date(dateTime);
+                newDateTime.setFullYear(selected.getFullYear());
+                newDateTime.setMonth(selected.getMonth());
+                newDateTime.setDate(selected.getDate());
+                setDateTime(newDateTime);
+              }
+            }}
+            style={styles.timePicker}
+          />
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity
+              style={styles.timePickerDoneButton}
+              onPress={() => setShowDatePicker(false)}
+            >
+              <Text style={styles.timePickerDoneText}>Done</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
       {showTimePicker && (
-        <DateTimePicker
-          value={dateTime}
-          mode="time"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={(event, selected) => {
-            setShowTimePicker(Platform.OS !== 'ios');
-            if (selected) {
-              const newDateTime = new Date(dateTime);
-              newDateTime.setHours(selected.getHours());
-              newDateTime.setMinutes(selected.getMinutes());
-              setDateTime(newDateTime);
-            }
-          }}
-        />
+        <View style={styles.timePickerContainer}>
+          <DateTimePicker
+            value={dateTime}
+            mode="time"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={(event, selected) => {
+              setShowTimePicker(Platform.OS !== 'ios');
+              if (selected) {
+                const newDateTime = new Date(dateTime);
+                newDateTime.setHours(selected.getHours());
+                newDateTime.setMinutes(selected.getMinutes());
+                setDateTime(newDateTime);
+              }
+            }}
+            style={styles.timePicker}
+          />
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity
+              style={styles.timePickerDoneButton}
+              onPress={() => setShowTimePicker(false)}
+            >
+              <Text style={styles.timePickerDoneText}>Done</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       )}
 
       <View style={styles.inputGroup}>
@@ -489,12 +558,24 @@ export default function CalendarScreen() {
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Notes</Text>
+        <Text style={styles.label}>Pre-Date Notes</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
           placeholder="How are you feeling? What are your goals for this date? Any nervousness or excitement you want to remember? What are your intentions with this person?"
-          value={notes}
-          onChangeText={setNotes}
+          value={preDateNotes}
+          onChangeText={setPreDateNotes}
+          multiline
+          numberOfLines={3}
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>Post-Date Reflection</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          placeholder="How did the date go? What did you learn? Any insights or feelings you want to remember?"
+          value={postDateNotes}
+          onChangeText={setPostDateNotes}
           multiline
           numberOfLines={3}
         />
@@ -532,35 +613,85 @@ export default function CalendarScreen() {
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Time</Text>
-        <TouchableOpacity
-          style={styles.timeButton}
-          onPress={() => setShowTimePicker(true)}
-        >
-          <Text style={styles.timeButtonText}>
-            {dateTime.toLocaleTimeString('en-US', {
-              hour: 'numeric',
-              minute: '2-digit',
-            })}
-          </Text>
-        </TouchableOpacity>
+        <Text style={styles.label}>Date & Time</Text>
+        <View style={styles.dateTimeRow}>
+          <TouchableOpacity
+            style={styles.dateTimeButton}
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Text style={styles.dateTimeButtonText}>
+              {dateTime.toLocaleDateString()}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.dateTimeButton}
+            onPress={() => setShowTimePicker(true)}
+          >
+            <Text style={styles.dateTimeButtonText}>
+              {dateTime.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+              })}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
+      {showDatePicker && (
+        <View style={styles.timePickerContainer}>
+          <DateTimePicker
+            value={dateTime}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={(event, selected) => {
+              setShowDatePicker(Platform.OS !== 'ios');
+              if (selected) {
+                const newDateTime = new Date(dateTime);
+                newDateTime.setFullYear(selected.getFullYear());
+                newDateTime.setMonth(selected.getMonth());
+                newDateTime.setDate(selected.getDate());
+                setDateTime(newDateTime);
+              }
+            }}
+            style={styles.timePicker}
+          />
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity
+              style={styles.timePickerDoneButton}
+              onPress={() => setShowDatePicker(false)}
+            >
+              <Text style={styles.timePickerDoneText}>Done</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
       {showTimePicker && (
-        <DateTimePicker
-          value={dateTime}
-          mode="time"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={(event, selected) => {
-            setShowTimePicker(Platform.OS !== 'ios');
-            if (selected) {
-              const newDateTime = new Date(dateTime);
-              newDateTime.setHours(selected.getHours());
-              newDateTime.setMinutes(selected.getMinutes());
-              setDateTime(newDateTime);
-            }
-          }}
-        />
+        <View style={styles.timePickerContainer}>
+          <DateTimePicker
+            value={dateTime}
+            mode="time"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={(event, selected) => {
+              setShowTimePicker(Platform.OS !== 'ios');
+              if (selected) {
+                const newDateTime = new Date(dateTime);
+                newDateTime.setHours(selected.getHours());
+                newDateTime.setMinutes(selected.getMinutes());
+                setDateTime(newDateTime);
+              }
+            }}
+            style={styles.timePicker}
+          />
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity
+              style={styles.timePickerDoneButton}
+              onPress={() => setShowTimePicker(false)}
+            >
+              <Text style={styles.timePickerDoneText}>Done</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       )}
 
       <View style={styles.inputGroup}>
@@ -574,12 +705,24 @@ export default function CalendarScreen() {
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Notes</Text>
+        <Text style={styles.label}>Pre-Date Notes</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
-          placeholder="Any additional notes..."
-          value={notes}
-          onChangeText={setNotes}
+          placeholder="How are you feeling? What are your goals for this date? Any nervousness or excitement you want to remember? What are your intentions with this person?"
+          value={preDateNotes}
+          onChangeText={setPreDateNotes}
+          multiline
+          numberOfLines={3}
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>Post-Date Reflection</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          placeholder="How did the date go? What did you learn? Any insights or feelings you want to remember?"
+          value={postDateNotes}
+          onChangeText={setPostDateNotes}
           multiline
           numberOfLines={3}
         />
@@ -647,9 +790,14 @@ export default function CalendarScreen() {
               {date.location && (
                 <Text style={styles.dateLocation}>📍 {date.location}</Text>
               )}
-              {date.notes && (
+              {date.preDateNotes && (
                 <Text style={styles.dateNotes} numberOfLines={2}>
-                  {date.notes}
+                  <Text style={styles.notesLabel}>Pre-date: </Text>{date.preDateNotes}
+                </Text>
+              )}
+              {date.postDateNotes && (
+                <Text style={styles.dateNotes} numberOfLines={2}>
+                  <Text style={styles.notesLabel}>Post-date: </Text>{date.postDateNotes}
                 </Text>
               )}
             </View>
@@ -673,11 +821,23 @@ export default function CalendarScreen() {
         visible={modalVisible}
         onRequestClose={() => setModalVisible(false)}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            {renderAddDateContent()}
-          </View>
-        </View>
+        <KeyboardAvoidingView 
+          style={styles.modalContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalContent}>
+              <ScrollView 
+                style={styles.modalScrollView}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {renderAddDateContent()}
+              </ScrollView>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Prospect Picker Modal */}
@@ -814,6 +974,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontStyle: 'italic',
   },
+  notesLabel: {
+    fontWeight: '600',
+    color: '#FF6B6B',
+  },
   deleteButton: {
     width: 30,
     height: 30,
@@ -845,6 +1009,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 20,
     elevation: 10,
+    maxHeight: '90%',
+  },
+  modalScrollView: {
+    flexGrow: 1,
   },
   modalTitle: {
     fontSize: 28,
@@ -917,6 +1085,49 @@ const styles = StyleSheet.create({
   timeButtonText: {
     fontSize: 16,
     color: '#2C3E50',
+    fontWeight: '600',
+  },
+  dateTimeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  dateTimeButton: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E9ECEF',
+  },
+  dateTimeButtonText: {
+    fontSize: 16,
+    color: '#2C3E50',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  timePickerContainer: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#E9ECEF',
+  },
+  timePicker: {
+    alignSelf: 'center',
+  },
+  timePickerDoneButton: {
+    backgroundColor: '#FF6B6B',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 10,
+    alignSelf: 'center',
+  },
+  timePickerDoneText: {
+    color: 'white',
+    fontSize: 16,
     fontWeight: '600',
   },
   modalButtons: {

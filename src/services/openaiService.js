@@ -3,7 +3,43 @@ import { OPENAI_CONFIG, SYSTEM_PROMPT } from '../config/openai';
 import { FirestoreService } from './firestoreService';
 
 export class OpenAIService {
-  static async generateDatingContext(userId) {
+  // Helper method to detect if user is asking about a specific prospect
+  static extractProspectName(userMessage, prospects) {
+    const message = userMessage.toLowerCase();
+    const prospectNames = prospects.map(p => p.name.toLowerCase());
+    
+    // Look for prospect names in the message
+    for (const prospectName of prospectNames) {
+      if (message.includes(prospectName)) {
+        return prospectName;
+      }
+    }
+    
+    // Look for common patterns like "with [name]", "about [name]", etc.
+    const patterns = [
+      /with\s+(\w+)/,
+      /about\s+(\w+)/,
+      /regarding\s+(\w+)/,
+      /for\s+(\w+)/
+    ];
+    
+    for (const pattern of patterns) {
+      const match = message.match(pattern);
+      if (match) {
+        const potentialName = match[1];
+        const foundProspect = prospectNames.find(name => 
+          name.includes(potentialName) || potentialName.includes(name)
+        );
+        if (foundProspect) {
+          return foundProspect;
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  static async generateDatingContext(userId, specificProspectName = null) {
     try {
       if (!userId) {
         return "User not authenticated.";
@@ -17,6 +53,15 @@ export class OpenAIService {
 
       // Filter active prospects only
       const activeProspects = prospects.filter(p => !p.inGraveyard);
+      
+      // Load dates for RAG context
+      const datesResult = await FirestoreService.getDates(userId);
+      const allDates = datesResult.success ? datesResult.data : [];
+
+      // Context size management
+      const MAX_PROSPECTS_FOR_GENERAL_QUERY = 8; // Limit for general queries
+      const MAX_DATES_PER_PROSPECT = 5; // Reduce from 10 for context management
+      const MAX_NOTES_PER_PROSPECT = 3; // Reduce from 5 for context management
 
       // Build context string with profile and latest notes per prospect
       let context = '';
@@ -97,9 +142,28 @@ export class OpenAIService {
         return context;
       }
 
+      // Filter prospects if specific prospect requested
+      let prospectsToInclude = activeProspects;
+      if (specificProspectName) {
+        prospectsToInclude = activeProspects.filter(p => 
+          p.name.toLowerCase().includes(specificProspectName.toLowerCase())
+        );
+      } else {
+        // For general queries, limit the number of prospects to prevent context overflow
+        prospectsToInclude = activeProspects.slice(0, MAX_PROSPECTS_FOR_GENERAL_QUERY);
+        if (activeProspects.length > MAX_PROSPECTS_FOR_GENERAL_QUERY) {
+          // Sort by most recent activity (prospects with recent dates or notes)
+          prospectsToInclude.sort((a, b) => {
+            const aDates = allDates.filter(d => d.prospectName === a.name).length;
+            const bDates = allDates.filter(d => d.prospectName === b.name).length;
+            return bDates - aDates;
+          });
+        }
+      }
+
       context += "Current Dating Prospects:\n\n";
 
-      for (const prospect of activeProspects) {
+      for (const prospect of prospectsToInclude) {
         context += `**${prospect.name}**\n`;
         if (prospect.age) context += `- Age: ${prospect.age}\n`;
         if (prospect.occupation) context += `- Occupation: ${prospect.occupation}\n`;
@@ -114,13 +178,48 @@ export class OpenAIService {
           context += `- Timeline notes:\n`;
           prospectNotes
             .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-            .slice(0, 5) // Only include last 5 notes per prospect
+            .slice(0, MAX_NOTES_PER_PROSPECT) // Limit notes per prospect
             .forEach(note => {
               const date = new Date(note.createdAt).toLocaleDateString();
               context += `  * ${date}: ${note.content}\n`;
             });
         }
+
+        // RAG: Add pre and post-date notes for this prospect
+        const prospectDates = allDates.filter(date => 
+          date.prospectName && date.prospectName.toLowerCase() === prospect.name.toLowerCase()
+        );
+        
+        if (prospectDates.length > 0) {
+          context += `- Date History:\n`;
+          prospectDates
+            .sort((a, b) => new Date(b.dateTime || b.date) - new Date(a.dateTime || a.date))
+            .slice(0, MAX_DATES_PER_PROSPECT) // Limit dates per prospect
+            .forEach(date => {
+              const dateStr = new Date(date.dateTime || date.date).toLocaleDateString();
+              const timeStr = new Date(date.dateTime || date.date).toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+              });
+              
+              context += `  * ${dateStr} at ${timeStr}`;
+              if (date.location) context += ` (${date.location})`;
+              context += `\n`;
+              
+              if (date.preDateNotes) {
+                context += `    Pre-date thoughts: ${date.preDateNotes}\n`;
+              }
+              if (date.postDateNotes) {
+                context += `    Post-date reflection: ${date.postDateNotes}\n`;
+              }
+            });
+        }
         context += "\n";
+      }
+
+      // Add context size warning if needed
+      if (!specificProspectName && activeProspects.length > MAX_PROSPECTS_FOR_GENERAL_QUERY) {
+        context += `\nNote: Showing data for your ${MAX_PROSPECTS_FOR_GENERAL_QUERY} most active prospects. You have ${activeProspects.length} total prospects. For specific advice about other prospects, mention their name in your question.\n`;
       }
 
       return context;
@@ -136,8 +235,16 @@ export class OpenAIService {
     }
 
     try {
-      // Generate current dating context
-      const datingContext = await this.generateDatingContext(userId);
+      // Get prospects for intelligent RAG
+      const prospectsResult = await FirestoreService.getProspects(userId);
+      const prospects = prospectsResult.success ? prospectsResult.data : [];
+      const activeProspects = prospects.filter(p => !p.inGraveyard);
+      
+      // Detect if user is asking about a specific prospect
+      const specificProspectName = this.extractProspectName(userMessage, activeProspects);
+      
+      // Generate current dating context with RAG
+      const datingContext = await this.generateDatingContext(userId, specificProspectName);
 
       // Build messages array
       const messages = [
@@ -163,7 +270,7 @@ export class OpenAIService {
           model: OPENAI_CONFIG.model,
           messages: messages,
           temperature: 0.7,
-          max_tokens: 500,
+          max_tokens: 1000,
         },
         {
           headers: {
@@ -199,8 +306,16 @@ export class OpenAIService {
     }
 
     try {
-      // Generate current dating context
-      const datingContext = await this.generateDatingContext(userId);
+      // Get prospects for intelligent RAG
+      const prospectsResult = await FirestoreService.getProspects(userId);
+      const prospects = prospectsResult.success ? prospectsResult.data : [];
+      const activeProspects = prospects.filter(p => !p.inGraveyard);
+      
+      // Detect if user is asking about a specific prospect
+      const specificProspectName = this.extractProspectName(userMessage, activeProspects);
+      
+      // Generate current dating context with RAG
+      const datingContext = await this.generateDatingContext(userId, specificProspectName);
 
       // Build messages array
       const messages = [
@@ -231,7 +346,7 @@ export class OpenAIService {
           model: OPENAI_CONFIG.model,
           messages: messages,
           temperature: 0.7,
-          max_tokens: 500,
+          max_tokens: 1000,
           stream: false, // Use regular request for React Native compatibility
         }),
       });

@@ -79,10 +79,12 @@ export default function ProspectsScreen({ navigation }) {
       <View style={styles.prospectInfo}>
         <Text style={styles.prospectName}>{item.name}</Text>
         <Text style={styles.prospectDetails}>
-          {item.age ? `${item.age} years` : 'Age not set'} • {item.occupation || 'No occupation'}
+          {item.age ? `${item.age} years` : ''}
+          {item.age && item.occupation ? ' • ' : ''}
+          {item.occupation || ''}
         </Text>
         {item.whereWeMet && (
-          <Text style={styles.prospectMeta}>Met at: {item.whereWeMet}</Text>
+          <Text style={styles.prospectMeta}>{item.whereWeMet}</Text>
         )}
       </View>
     </TouchableOpacity>
